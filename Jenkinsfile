@@ -11,15 +11,23 @@ pipeline {
     stage('Run template pipeline') {
       steps {
         script {
-          githubFileRunner([
-            agentLabel   : 'master',                                        // optional
-            githubCredsId: '',                                              // leave empty for public repo
-            githubUrl    : 'https://github.com/mustafakhodor/POC.git',      // your GitHub repo
-            gitRef       : 'main',                                          // branch
-            filePath     : 'config/input.json',                             // file path in repo
-            command      : 'cat'                                            // must print JSON to stdout; cat works for testing
+          githubFileRunner.call([
+            agentLabel   : 'master',                                   // optional (not used in step)
+            githubCredsId: '',                                         // public repo -> leave empty
+            githubUrl    : 'https://github.com/mustafakhodor/POC.git', // your repo
+            gitRef       : 'main',
+            filePath     : 'config/input.json',
+            command      : 'cat'                                       // prints JSON to stdout
           ])
         }
+      }
+    }
+  }
+  post {
+    success {
+      script {
+        unstash 'github-process-result'
+        archiveArtifacts artifacts: 'gh-src/command-result.json', onlyIfSuccessful: true, allowEmptyArchive: true
       }
     }
   }
