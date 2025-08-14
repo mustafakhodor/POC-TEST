@@ -37,47 +37,41 @@ def call(Map config = [:]) {
     }
 
     stage('Run command & parse JSON') {
-      def workDir  = "${env.WORKSPACE}/gh-src"
-      def fullPath = "${workDir}/${filePath}"
+  def workDir  = "${env.WORKSPACE}/gh-src"
+  def fullPath = "${workDir}/${filePath}"
 
-      // Run the command; must print JSON to stdout
-     String rawOut = sh(
-  script: """
-    set -eu
-    ${command} '${fullPath}'
-  """.stripIndent(),
-  returnStdout: true
-).trim()
+  String rawOut = sh(
+    script: """
+      set -eu
+      ${command} '${fullPath}'
+    """.stripIndent(),
+    returnStdout: true
+  ).trim()
 
+  echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
 
-      echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
+  // ✅ Plugin step (no script approval needed)
+  def parsed
+  try {
+    parsed = readJSON text: rawOut
+  } catch (e) {
+    error "Failed to parse JSON from command output.\nError: ${e}\nOutput was:\n${rawOut}"
+  }
 
-      // Parse JSON using built-in Groovy (no Pipeline Utility Steps plugin required)
-      def parsed
-      try {
-        def slurper = new groovy.json.JsonSlurperClassic()
-        parsed = slurper.parseText(rawOut)  // Map/List
-      } catch (e) {
-        error "Failed to parse JSON from command output.\nError: ${e}\nOutput was:\n${rawOut}"
-      }
+  writeJSON file: "${workDir}/command-result.json", json: parsed, pretty: 2
+  stash name: 'github-process-result', includes: 'gh-src/command-result.json'
 
-      // Pretty-print to file and stash it (no writeJSON needed)
-      def pretty = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(parsed))
-      writeFile file: "${workDir}/command-result.json", text: pretty
+  if (parsed instanceof Map && parsed.status == 'success') {
+    echo "✅ Success branch"
+  } else if (parsed instanceof Map && parsed.status == 'warning') {
+    echo "⚠️ Warning: ${parsed.message ?: 'No message provided'}"
+  } else {
+    echo "ℹ️ Non-success status: ${(parsed instanceof Map && parsed.status) ? parsed.status : 'unknown'}"
+  }
 
-      stash name: 'github-process-result', includes: 'gh-src/command-result.json'
+  return parsed
+}
 
-      // Optional branching
-      if (parsed instanceof Map && parsed.status == 'success') {
-        echo "✅ Success branch"
-      } else if (parsed instanceof Map && parsed.status == 'warning') {
-        echo "⚠️ Warning: ${parsed.message ?: 'No message provided'}"
-      } else {
-        echo "ℹ️ Non-success status: ${(parsed instanceof Map && parsed.status) ? parsed.status : 'unknown'}"
-      }
-
-      return parsed
-    }
   }
 }
 
