@@ -1,64 +1,96 @@
-// poc.groovy  (REPLACE your file with this)
-// Reusable step: checkout GitHub, read a file, run a command that outputs JSON,
-// parse it, return the parsed Map.
+def call(Map cfg = [:]) {
+  pipeline {
+    agent any
 
-def call(Map config = [:]) {
-  def githubUrl = require(config, 'githubUrl')
-  def gitRef    = require(config, 'gitRef')
-  def filePath  = require(config, 'filePath')
-  def command   = require(config, 'command')
-  def credsId   = (config.githubCredsId ?: '').trim()
-
-  def checkoutDir = "${env.WORKSPACE}/gh-src"
-
-  dir(checkoutDir) {
-    deleteDir()
-
-    def extensions = [
-      [$class: 'WipeWorkspace'],
-      [$class: 'CloneOption', depth: 1, noTags: true, shallow: true, honorRefspec: true]
-    ]
-    def scmCfg = [
-      $class: 'GitSCM',
-      branches: [[name: gitRef]],
-      userRemoteConfigs: [[url: githubUrl]],
-      extensions: extensions
-    ]
-    if (credsId) {
-      scmCfg.userRemoteConfigs = [[url: githubUrl, credentialsId: credsId]]
-    }
-    checkout(scmCfg)
-
-    // Validate file existence
-    sh """ test -s "${filePath}" || (echo "File not found or empty: ${filePath}" && exit 1) """
-
-    // Run the command with the file and capture JSON output
-    def fullPath = "${pwd()}/${filePath}"
-    def rawOut = sh(script: "${command} '${fullPath}'", returnStdout: true).trim()
-    echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
-
-    // Parse JSON
-    def parsed
-    try {
-      parsed = readJSON text: rawOut
-    } catch (e) {
-      error "Failed to parse JSON from command output.\nError: ${e}\nOutput was:\n${rawOut}"
+    options {
+      timestamps()
+      disableConcurrentBuilds()
     }
 
-    // Save for later / artifacts
-    writeJSON file: "${checkoutDir}/command-result.json", json: parsed, pretty: 2
-    stash name: 'github-process-result', includes: 'gh-src/command-result.json'
+    environment {
+      GITHUB_URL      = require(cfg, 'githubUrl')
+      GIT_REF         = require(cfg, 'gitRef')
+      FILE_PATH       = require(cfg, 'filePath')
+      PROCESS_CMD     = require(cfg, 'command')
+      GITHUB_CREDS_ID = (cfg.githubCredsId ?: '').trim()
+    }
 
-    return parsed
+    stages {
+      stage('Checkout GitHub') {
+        steps {
+          script {
+            def work = "${env.WORKSPACE}/gh-src"
+            dir(work) {
+              deleteDir()
+              def exts = [
+                [$class: 'WipeWorkspace'],
+                [$class: 'CloneOption', depth: 1, noTags: true, shallow: true, honorRefspec: true]
+              ]
+              def scmCfg = [
+                $class: 'GitSCM',
+                branches: [[name: env.GIT_REF]],
+                userRemoteConfigs: [[url: env.GITHUB_URL]],
+                extensions: exts
+              ]
+              if (env.GITHUB_CREDS_ID) {
+                scmCfg.userRemoteConfigs = [[url: env.GITHUB_URL, credentialsId: env.GITHUB_CREDS_ID]]
+              }
+              checkout(scmCfg)
+
+              sh """ test -s "${env.FILE_PATH}" || (echo "File not found or empty: ${env.FILE_PATH}" && exit 1) """
+            }
+          }
+        }
+      }
+
+      stage('Run command & parse JSON') {
+        steps {
+          script {
+            def work = "${env.WORKSPACE}/gh-src"
+            def full = "${work}/${env.FILE_PATH}"
+            def raw  = sh(script: "${env.PROCESS_CMD} '${full}'", returnStdout: true).trim()
+            echo "Raw command output (first 500 chars):\n${raw.take(500)}"
+
+            def parsed
+            try {
+              parsed = readJSON text: raw
+            } catch (e) {
+              error "Failed to parse JSON.\nError: ${e}\nOutput was:\n${raw}"
+            }
+
+            writeJSON file: "${work}/command-result.json", json: parsed, pretty: 2
+            stash name: 'github-process-result', includes: 'gh-src/command-result.json'
+
+            if (parsed.status == 'success') {
+              echo "✅ Success"
+            } else if (parsed.status == 'warning') {
+              echo "⚠️ Warning: ${parsed.message ?: 'No message'}"
+            } else {
+              error "❌ Failure: ${parsed.message ?: 'No message'}"
+            }
+          }
+        }
+      }
+    }
+
+    post {
+      success {
+        script {
+          unstash 'github-process-result'
+          archiveArtifacts artifacts: 'gh-src/command-result.json', onlyIfSuccessful: true, allowEmptyArchive: true
+        }
+      }
+      always {
+        cleanWs notFailBuild: true
+      }
+    }
   }
 }
 
-// helper
+// helper (inside same file)
 def require(Map m, String key) {
   if (!m.containsKey(key) || m[key] == null || "${m[key]}".trim() == '') {
-    error "poc.groovy: missing required argument '${key}'"
+    error "githubFileRunner: missing required argument '${key}'"
   }
   m[key]
 }
-
-return this
