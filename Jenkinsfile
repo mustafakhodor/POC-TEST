@@ -36,13 +36,4 @@ pipeline {
       }
     }
   }
-
-  post {
-    success {
-      script {
-        unstash 'github-process-result'
-        archiveArtifacts artifacts: 'gh-src/command-result.json', onlyIfSuccessful: true, allowEmptyArchive: true
-      }
-    }
-  }
 }
