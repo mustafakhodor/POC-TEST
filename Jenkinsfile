@@ -4,21 +4,22 @@ pipeline {
     stage('Load template') {
       steps {
         script {
-          githubFileRunner = load 'poc.groovy'
+          githubFileRunner = load 'poc.groovy'   // adjust path if placed elsewhere
         }
       }
     }
     stage('Run template pipeline') {
       steps {
         script {
-          githubFileRunner.call([
-            agentLabel   : 'master',                                   // optional (not used in step)
-            githubCredsId: '',                                         // public repo -> leave empty
+          def result = githubFileRunner.call([
+            agentLabel   : 'master',                                   // optional
+            githubCredsId: '',                                         // empty for public repo
             githubUrl    : 'https://github.com/mustafakhodor/POC.git', // your repo
             gitRef       : 'main',
             filePath     : 'config/input.json',
-            command      : 'cat'                                       // prints JSON to stdout
+            command      : 'cat'                                       // must print JSON
           ])
+          echo "Parsed keys: ${result instanceof Map ? (result.keySet() as List) : 'N/A'}"
         }
       }
     }
