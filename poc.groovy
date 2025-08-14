@@ -41,13 +41,14 @@ def call(Map config = [:]) {
       def fullPath = "${workDir}/${filePath}"
 
       // Run the command; must print JSON to stdout
-      String rawOut = sh(
-        script: """
-          set -euo pipefail
-          ${command} '${fullPath}'
-        """.stripIndent(),
-        returnStdout: true
-      ).trim()
+     String rawOut = sh(
+  script: """
+    set -eu
+    ${command} '${fullPath}'
+  """.stripIndent(),
+  returnStdout: true
+).trim()
+
 
       echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
 
