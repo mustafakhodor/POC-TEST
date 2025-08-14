@@ -4,6 +4,7 @@ def call(Map config = [:]) {
   def filePath      = require(config, 'filePath')
   def command       = require(config, 'command')
 
+  def githubCredsId = (config.githubCredsId ?: '').trim()
   def agentLabel    = (config.agentLabel ?: '').toString()
 
   node(agentLabel) {
