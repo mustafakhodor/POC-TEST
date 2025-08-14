@@ -30,32 +30,49 @@ def call(Map config = [:]) {
       }
     }
 
-    stage('Run command & parse JSON') {
-      def workDir  = "${env.WORKSPACE}/gh-src"
-      def fullPath = "${workDir}/${filePath}"
-      String rawOut = sh(script: "${command} '${fullPath}'", returnStdout: true).trim()
-      echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
+stage('Run command & parse JSON') {
+  def workDir  = "${env.WORKSPACE}/gh-src"
+  def fullPath = "${workDir}/${filePath}"
 
-      def parsed
-      try {
-        parsed = readJSON text: rawOut
-      } catch (e) {
-        error "Failed to parse JSON from command output.\nError: ${e}\nOutput was:\n${rawOut}"
-      }
+  // Run the command; fail fast on errors
+  String rawOut = sh(
+    script: """
+      set -euo pipefail
+      ${command} '${fullPath}'
+    """.stripIndent(),
+    returnStdout: true
+  ).trim()
 
-      writeJSON file: "${workDir}/command-result.json", json: parsed, pretty: 2
-      stash name: 'github-process-result', includes: 'gh-src/command-result.json'
+  echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
 
-      if (parsed.status == 'success') {
-        echo "✅ Success branch"
-      } else if (parsed.status == 'warning') {
-        echo "⚠️ Warning: ${parsed.message ?: 'No message provided'}"
-      } else {
-        echo "ℹ️ Non-success status: ${parsed.status ?: 'unknown'}"
-      }
+  // Parse JSON without plugins
+  def parsed
+  try {
+    def slurper = new groovy.json.JsonSlurperClassic()
+    parsed = slurper.parseText(rawOut)  // Map/List
+  } catch (e) {
+    error "Failed to parse JSON from command output.\nError: ${e}\nOutput was:\n${rawOut}"
+  }
 
-      return parsed
-    }
+  // Pretty-print to file and stash it
+  def pretty = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(parsed))
+  writeFile file: "${workDir}/command-result.json", text: pretty
+
+  stash name: 'github-process-result', includes: 'gh-src/command-result.json'
+
+  // Optional branching
+  if (parsed instanceof Map && parsed.status == 'success') {
+    echo "✅ Success branch"
+  } else if (parsed instanceof Map && parsed.status == 'warning') {
+    echo "⚠️ Warning: ${parsed.message ?: 'No message provided'}"
+  } else {
+    echo "ℹ️ Non-success status: ${(parsed instanceof Map && parsed.status) ? parsed.status : 'unknown'}"
+  }
+
+  return parsed
+}
+
+
   }
 }
 
