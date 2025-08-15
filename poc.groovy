@@ -279,7 +279,7 @@ def call(Map config = [:]) {
             def gitCredsId = "85980cc8-2db9-4323-97e2-3c4ba4dace3b"        // Jenkins cred (Username + PAT)
             def forcedRepo = "mustafakhodor/POC-TEST"                      // <-- force repo slug here
             // ---------------
-            def stamp = sh(script: 'date -u +%Y%m%d-%H%M%S', returnStdout: true).trim()
+def stamp = sh(script: 'date -u +%d-%m-%Y-%H:%M:%S', returnStdout: true).trim()
             def targetDir = "${repoDir}/release/${stamp}"
             dir(repoDir) {
                 if (!fileExists(sourceJsonDir)) {
