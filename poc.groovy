@@ -115,53 +115,76 @@ def call(Map config = [:]) {
       // }
       }
 
-    stage('Build API Deployment Commands') {
-      steps {
-        script {
-          def workDir  = "${env.WORKSPACE}/gh-src"
-          def manifestPath = "${workDir}/${filePath}"
-          if (!fileExists(manifestPath)) {
-            error "Manifest file not found: ${manifestPath}"
-          }
+    
+    
+    // Scripted stage — NO 'steps { }' here
+stage('Build API Deployment Commands') {
+  // where the repo was checked out earlier
+  def workDir      = "${env.WORKSPACE}/gh-src"
+  // change if your manifest path is different
+  def manifestPath = "${workDir}/deployment.manifest.json"
 
-          def manifest = readJSON file: manifestPath
+  if (!fileExists(manifestPath)) {
+    error "Manifest file not found: ${manifestPath}"
+  }
 
-          def buildApiCommands = { apiList ->
-            (apiList ?: []).collect { api ->
-              def project = api.project
-              def image   = api.image
-              if (!project || !image) {
-                echo 'Skipping API entry with missing project or image'
-                return null
-              }
+  def manifest = readJSON file: manifestPath
 
-              return "kubectl set image deployment/${project.toLowerCase()} ${project.toLowerCase()}=${image} --record"
-            }.findAll { it }
-            }
+  // Namespaces (override via env if you want different ones per channel)
+  def nsDefault   = (env.KUBE_NAMESPACE ?: 'default')
+  def nsInternet  = (env.KUBE_NS_INTERNET ?: nsDefault)
+  def nsIntranet  = (env.KUBE_NS_INTRANET ?: nsDefault)
 
-          def commands = []
-          if (manifest.api?.internet) commands += buildApiCommands(manifest.api.internet)
-          if (manifest.api?.intranet) commands += buildApiCommands(manifest.api.intranet)
+  // Optional prefix for deployment names, e.g., "just" -> "just-decisions"
+  def depPrefix   = (env.DEPLOYMENT_PREFIX ?: '').trim()
 
-          if (commands.isEmpty()) {
-            echo 'No API deployments found in manifest'
-            return
-          }
+  // Container name in the Deployment. Defaults to project.toLowerCase()
+  def resolveContainerName = { String project ->
+    (env.API_CONTAINER_NAME ?: project?.toLowerCase())
+  }
 
-          echo "Generated API deployment commands:\n${commands.join('\n')}"
-
-          // Optionally run them
-          // commands.each { cmd ->
-          //   sh """
-          //     set -e
-          //     echo "Executing: ${cmd}"
-          //     ${cmd}
-          //   """
-          // }
-          }
-        }
+  // Build 'kubectl set image' commands for a list of APIs under a given namespace
+  def buildApiCommands = { List apiList, String namespace ->
+    (apiList ?: []).collect { api ->
+      def project = api.project
+      def image   = api.image
+      if (!project || !image) {
+        echo "Skipping API entry with missing project or image -> ${api}"
+        return null
       }
-    }
+
+      def depBase   = project.toLowerCase()
+      def depName   = depPrefix ? "${depPrefix}-${depBase}" : depBase
+      def container = resolveContainerName(project)
+
+      // Final command
+      "kubectl -n ${namespace} set image deployment/${depName} ${container}=${image} --record"
+    }.findAll { it }
+  }
+
+  def commands = []
+  if (manifest.api?.internet) commands += buildApiCommands(manifest.api.internet, nsInternet)
+  if (manifest.api?.intranet) commands += buildApiCommands(manifest.api.intranet, nsIntranet)
+
+  if (commands.isEmpty()) {
+    echo 'No API deployments found in manifest'
+    return
+  }
+
+  echo "Generated API deployment commands:\n${commands.join('\n')}"
+
+  // To execute them, uncomment below. DRY_RUN=true will only print.
+  // if (!(env.DRY_RUN ?: 'false').toBoolean()) {
+  //   commands.each { cmd ->
+  //     sh """
+  //       set -e
+  //       echo "Executing: ${cmd}"
+  //       ${cmd}
+  //     """
+  //   }
+  // }
+}
+
     }
 
 @NonCPS
