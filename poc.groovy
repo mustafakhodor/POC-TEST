@@ -43,8 +43,6 @@ def call(Map config = [:]) {
         returnStdout: true
       ).trim()
 
-      echo "Raw command output (first 500 chars):\n${rawOut.take(500)}"
-
       def parsed
       try {
         parsed = readJSON text: rawOut
@@ -56,8 +54,8 @@ def call(Map config = [:]) {
     }
 
     stage('Read deployment.manifest.json & Build Commands') {
-      // The manifest is expected in the checked-out repo root
-      def manifestPath = "${env.WORKSPACE}/gh-src/deployment.manifest.json"
+      def workDir  = "${env.WORKSPACE}/gh-src"
+      def manifestPath = "${workDir}/${filePath}"
       if (!fileExists(manifestPath)) {
         error "Manifest file not found: ${manifestPath}"
       }
