@@ -8,7 +8,6 @@ def call(Map config = [:]) {
   def agentLabel    = (config.agentLabel ?: '').toString()
 
   node(agentLabel) {
-
     stage('Checkout GitHub') {
       def checkoutDir = "${env.WORKSPACE}/gh-src"
       dir(checkoutDir) {
@@ -62,7 +61,6 @@ def call(Map config = [:]) {
 
       def manifest = readJSON file: manifestPath
 
-      // Helper to build commands from a dynamics block (supports "projects" or typo "projets")
       def buildCommands = { dynamicsList ->
         (dynamicsList ?: []).collectMany { dyn ->
           def managedSolutionPath = dyn.managedSolution
@@ -86,15 +84,15 @@ def call(Map config = [:]) {
             parts << "--connectionstring \"${env.FLOWON_CONN ?: ''}\""
             parts << "-p \"${flopPath}\""
             parts << "-s \"${managedSolutionPath}\""
-            parts << "-oc true"                           // <-- as requested
+            parts << '-oc true'
             if (dataFile)  parts << "-d \"${dataFile}\""
             if (entityMap) parts << "-m \"${entityMap}\""
             if (localizedDataMap) parts << "-m \"${localizedDataMap}\""
 
             parts.join(' ')
-          }.findAll { it } // drop nulls
+          }.findAll { it }
+          }
         }
-      }
 
       def commands = []
       if (manifest.add?.dynamics)    { commands += buildCommands(manifest.add.dynamics) }
@@ -115,9 +113,56 @@ def call(Map config = [:]) {
       //     ${cmd}
       //   """
       // }
+      }
+
+    stage('Build API Deployment Commands') {
+      steps {
+        script {
+          def workDir  = "${env.WORKSPACE}/gh-src"
+          def manifestPath = "${workDir}/${filePath}"
+          if (!fileExists(manifestPath)) {
+            error "Manifest file not found: ${manifestPath}"
+          }
+
+          def manifest = readJSON file: manifestPath
+
+          def buildApiCommands = { apiList ->
+            (apiList ?: []).collect { api ->
+              def project = api.project
+              def image   = api.image
+              if (!project || !image) {
+                echo 'Skipping API entry with missing project or image'
+                return null
+              }
+
+              return "kubectl set image deployment/${project.toLowerCase()} ${project.toLowerCase()}=${image} --record"
+            }.findAll { it }
+            }
+
+          def commands = []
+          if (manifest.api?.internet) commands += buildApiCommands(manifest.api.internet)
+          if (manifest.api?.intranet) commands += buildApiCommands(manifest.api.intranet)
+
+          if (commands.isEmpty()) {
+            echo 'No API deployments found in manifest'
+            return
+          }
+
+          echo "Generated API deployment commands:\n${commands.join('\n')}"
+
+          // Optionally run them
+          // commands.each { cmd ->
+          //   sh """
+          //     set -e
+          //     echo "Executing: ${cmd}"
+          //     ${cmd}
+          //   """
+          // }
+          }
+        }
+      }
     }
-  }
-}
+    }
 
 @NonCPS
 private String require(Map m, String key) {
