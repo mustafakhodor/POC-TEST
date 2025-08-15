@@ -115,9 +115,7 @@ def call(Map config = [:]) {
       // }
       }
 
-    
-    
-    // Scripted stage — NO 'steps { }' here
+// Scripted stage — NO 'steps { }' here
 stage('Build API Deployment Commands') {
   // where the repo was checked out earlier
   def workDir      = "${env.WORKSPACE}/gh-src"
@@ -160,7 +158,7 @@ stage('Build API Deployment Commands') {
       // Final command
       "kubectl -n ${namespace} set image deployment/${depName} ${container}=${image} --record"
     }.findAll { it }
-  }
+    }
 
   def commands = []
   if (manifest.api?.internet) commands += buildApiCommands(manifest.api.internet, nsInternet)
@@ -174,18 +172,18 @@ stage('Build API Deployment Commands') {
   echo "Generated API deployment commands:\n${commands.join('\n')}"
 
   // To execute them, uncomment below. DRY_RUN=true will only print.
-  // if (!(env.DRY_RUN ?: 'false').toBoolean()) {
-  //   commands.each { cmd ->
-  //     sh """
-  //       set -e
-  //       echo "Executing: ${cmd}"
-  //       ${cmd}
-  //     """
-  //   }
+  if (!(env.DRY_RUN ?: 'false').toBoolean()) {
+  // commands.each { cmd ->
+  //   sh """
+  //     set -e
+  //     echo "Executing: ${cmd}"
+  //     ${cmd}
+  //   """
   // }
-}
+  }
+  }}
 
-    }
+}
 
 @NonCPS
 private String require(Map m, String key) {
