@@ -247,9 +247,9 @@ stage('Build API Gateway Spec Commands') {
         echo "Skipping API (missing project or openApiSpecs): ${groovy.json.JsonOutput.toJson(api)}"
         return null
       }
-      if (!fileExists(specAbs)) {
-        error "OpenAPI spec not found: ${specAbs} (from ${specRel})"
-      }
+      // if (!fileExists(specAbs)) {
+      //   error "OpenAPI spec not found: ${specAbs} (from ${specRel})"
+      // }
       def service = resolveServiceName(project)
       fill(tpl, [SPEC: specAbs, SERVICE: service, NAME: name, PROJECT: project, CHANNEL: channel])
     }.findAll { it }
