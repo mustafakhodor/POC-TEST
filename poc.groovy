@@ -300,7 +300,7 @@ def stamp = sh(script: 'date -u +%d-%m-%Y-%H:%M:%S', returnStdout: true).trim()
       git config user.name  "CI Bot"
       git config user.email "ci-bot@local"
     '''
-                sh "git add 'release/${stamp}'"
+                sh "git add 'release/jenkins/${stamp}'"
                 def hasChanges = sh(script: 'git diff --cached --quiet || echo CHANGED', returnStdout: true).trim()
                 if (hasChanges != 'CHANGED') {
                     echo "Nothing to commit under release/${stamp}"
