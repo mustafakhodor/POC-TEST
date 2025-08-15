@@ -274,13 +274,13 @@ stage('Build API Gateway Spec Commands') {
 
   // Execute unless DRY_RUN=true
   if (!(env.DRY_RUN ?: 'false').toBoolean()) {
-    commands.each { cmd ->
-      sh """
-        set -e
-        echo "Executing: ${cmd}"
-        ${cmd}
-      """
-    }
+    // commands.each { cmd ->
+    //   sh """
+    //     set -e
+    //     echo "Executing: ${cmd}"
+    //     ${cmd}
+    //   """
+    // }
   }
 }
 
