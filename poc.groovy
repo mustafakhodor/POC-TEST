@@ -115,9 +115,6 @@ def call(Map config = [:]) {
       // }
       }
 
-    
-    
-    
     stage('Build API Deployment Commands') {
       def workDir  = "${env.WORKSPACE}/gh-src"
       def manifestPath = "${workDir}/${filePath}"
@@ -182,110 +179,183 @@ def call(Map config = [:]) {
       //   """
       // }
       }
-    }
-  
-  // === Build & (optionally) run API Gateway OpenAPI import commands ===
-stage('Build API Gateway Spec Commands') {
-      def workDir  = "${env.WORKSPACE}/gh-src"
-      def manifestPath = "${workDir}/${filePath}"
-      if (!fileExists(manifestPath)) {
-        error "Manifest file not found: ${manifestPath}"
       }
 
-      def manifest = readJSON file: manifestPath
+    stage('Build API Gateway Spec Commands') {
+          def workDir  = "${env.WORKSPACE}/gh-src"
+          def manifestPath = "${workDir}/${filePath}"
+          if (!fileExists(manifestPath)) {
+            error "Manifest file not found: ${manifestPath}"
+          }
 
-  // Channels -> where to send these specs (use env to map per channel)
-  def channelInternet = (env.GW_CHANNEL_INTERNET ?: 'internet')
-  def channelIntranet = (env.GW_CHANNEL_INTRANET ?: 'intranet')
+          def manifest = readJSON file: manifestPath
 
-  // Service name shaping (prefix/suffix optional)
-  def svcPrefix = (env.API_SERVICE_PREFIX ?: '').trim()
-  def svcSuffix = (env.API_SERVICE_SUFFIX ?: '').trim()
+      // Channels -> where to send these specs (use env to map per channel)
+      def channelInternet = (env.GW_CHANNEL_INTERNET ?: 'internet')
+      def channelIntranet = (env.GW_CHANNEL_INTRANET ?: 'intranet')
 
-  // Command templates (override these with your real gateway CLI)
-  // Available placeholders: ${SPEC}, ${SERVICE}, ${NAME}, ${PROJECT}, ${CHANNEL}
-  def tplInternet = (env.GW_CMD_INTERNET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
-  def tplIntranet = (env.GW_CMD_INTRANET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
+      // Service name shaping (prefix/suffix optional)
+      def svcPrefix = (env.API_SERVICE_PREFIX ?: '').trim()
+      def svcSuffix = (env.API_SERVICE_SUFFIX ?: '').trim()
 
-  // Where specs live (prefix path if your manifest paths are relative)
-  def specsRoot = (env.API_SPEC_ROOT ?: workDir)
+      // Command templates (override these with your real gateway CLI)
+      // Available placeholders: ${SPEC}, ${SERVICE}, ${NAME}, ${PROJECT}, ${CHANNEL}
+      def tplInternet = (env.GW_CMD_INTERNET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
+      def tplIntranet = (env.GW_CMD_INTRANET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
 
-  // Helpers
-  def resolveServiceName = { String project ->
-    def base = (project ?: '').toLowerCase().replaceAll('\\s+', '-')
-    def parts = []
-    if (svcPrefix) parts << svcPrefix
-    parts << base
-    if (svcSuffix) parts << svcSuffix
-    parts.findAll { it }.join('-')
-  }
+      // Where specs live (prefix path if your manifest paths are relative)
+      def specsRoot = (env.API_SPEC_ROOT ?: workDir)
 
-  def resolveSpecPath = { String p ->
-    if (!p) return null
-    // If manifest path starts with '/', treat as repo-relative under gh-src
-    if (p.startsWith('/')) return "${workDir}${p}"
-    // Otherwise, join with specsRoot (defaults to gh-src)
-    return "${specsRoot}/${p}"
-  }
-
-  def fill = { String tpl, Map vars ->
-    tpl
-      .replace('${SPEC}',    vars.SPEC    ?: '')
-      .replace('${SERVICE}', vars.SERVICE ?: '')
-      .replace('${NAME}',    vars.NAME    ?: '')
-      .replace('${PROJECT}', vars.PROJECT ?: '')
-      .replace('${CHANNEL}', vars.CHANNEL ?: '')
-  }
-
-  def buildForList = { List apiList, String channel, String tpl ->
-    (apiList ?: []).collect { api ->
-      def project = api?.project
-      def name    = api?.name ?: project
-      def specRel = api?.openApiSpecs
-      def specAbs = resolveSpecPath(specRel)
-      if (!project || !specAbs) {
-        echo "Skipping API (missing project or openApiSpecs): ${groovy.json.JsonOutput.toJson(api)}"
-        return null
+      // Helpers
+      def resolveServiceName = { String project ->
+        def base = (project ?: '').toLowerCase().replaceAll('\\s+', '-')
+        def parts = []
+        if (svcPrefix) parts << svcPrefix
+        parts << base
+        if (svcSuffix) parts << svcSuffix
+        parts.findAll { it }.join('-')
       }
-      // if (!fileExists(specAbs)) {
-      //   error "OpenAPI spec not found: ${specAbs} (from ${specRel})"
+
+      def resolveSpecPath = { String p ->
+        if (!p) return null
+        // If manifest path starts with '/', treat as repo-relative under gh-src
+        if (p.startsWith('/')) return "${workDir}${p}"
+        // Otherwise, join with specsRoot (defaults to gh-src)
+        return "${specsRoot}/${p}"
+      }
+
+      def fill = { String tpl, Map vars ->
+        tpl
+          .replace('${SPEC}',    vars.SPEC    ?: '')
+          .replace('${SERVICE}', vars.SERVICE ?: '')
+          .replace('${NAME}',    vars.NAME    ?: '')
+          .replace('${PROJECT}', vars.PROJECT ?: '')
+          .replace('${CHANNEL}', vars.CHANNEL ?: '')
+      }
+
+      def buildForList = { List apiList, String channel, String tpl ->
+        (apiList ?: []).collect { api ->
+          def project = api?.project
+          def name    = api?.name ?: project
+          def specRel = api?.openApiSpecs
+          def specAbs = resolveSpecPath(specRel)
+          if (!project || !specAbs) {
+            echo "Skipping API (missing project or openApiSpecs): ${groovy.json.JsonOutput.toJson(api)}"
+            return null
+          }
+          // if (!fileExists(specAbs)) {
+          //   error "OpenAPI spec not found: ${specAbs} (from ${specRel})"
+          // }
+          def service = resolveServiceName(project)
+          fill(tpl, [SPEC: specAbs, SERVICE: service, NAME: name, PROJECT: project, CHANNEL: channel])
+        }.findAll { it }
+        }
+
+      // Collect APIs from both add & update
+      def addInternet    = (manifest?.add?.api?.internet    ?: [])
+      def addIntranet    = (manifest?.add?.api?.intranet    ?: [])
+      def updateInternet = (manifest?.update?.api?.internet ?: [])
+      def updateIntranet = (manifest?.update?.api?.intranet ?: [])
+
+      def commands = []
+      commands += buildForList(addInternet   + updateInternet, channelInternet, tplInternet)
+      commands += buildForList(addIntranet   + updateIntranet, channelIntranet, tplIntranet)
+
+      if (commands.isEmpty()) {
+        echo 'No API gateway imports to process (no openApiSpecs found).'
+        return
+      }
+
+      echo "Gateway import commands:\n${commands.join('\n')}"
+
+      // Execute unless DRY_RUN=true
+      if (!(env.DRY_RUN ?: 'false').toBoolean()) {
+      // commands.each { cmd ->
+      //   sh """
+      //     set -e
+      //     echo "Executing: ${cmd}"
+      //     ${cmd}
+      //   """
       // }
-      def service = resolveServiceName(project)
-      fill(tpl, [SPEC: specAbs, SERVICE: service, NAME: name, PROJECT: project, CHANNEL: channel])
-    }.findAll { it }
-  }
+      }
+      }
 
-  // Collect APIs from both add & update
-  def addInternet    = (manifest?.add?.api?.internet    ?: [])
-  def addIntranet    = (manifest?.add?.api?.intranet    ?: [])
-  def updateInternet = (manifest?.update?.api?.internet ?: [])
-  def updateIntranet = (manifest?.update?.api?.intranet ?: [])
+    
+    
+    
+    
+    stage('Archive JSONs & Push to GitHub') {
+      // --- config ---
+      def repoDir            = "${env.WORKSPACE}/gh-src"                     // repo root
+      def sourceJsonDir      = "${repoDir}/release/main"                     // where *.json live
+      def manifestFile       = "${repoDir}/config/deployment.manifest.json"  // extra file to include
+      def gitCredsId         = (env.GIT_PUSH_CREDENTIALS_ID ?: 'gitlab_ci_token') // or your GitHub cred ID
+  // ---------------
 
-  def commands = []
-  commands += buildForList(addInternet   + updateInternet, channelInternet, tplInternet)
-  commands += buildForList(addIntranet   + updateIntranet, channelIntranet, tplIntranet)
+      def stamp = sh(script: 'date -u +%Y%m%d-%H%M%S', returnStdout: true).trim()
+      def targetDir = "${repoDir}/release/${stamp}"
 
-  if (commands.isEmpty()) {
-    echo 'No API gateway imports to process (no openApiSpecs found).'
-    return
-  }
+      dir(repoDir) {
+        if (!fileExists(sourceJsonDir)) {
+          error "Source JSON directory not found: ${sourceJsonDir}"
+        }
 
-  echo "Gateway import commands:\n${commands.join('\n')}"
+        def jsons = findFiles(glob: 'release/main/*.json')
+        if (!jsons || jsons.size() == 0) {
+          error "No .json files found under ${sourceJsonDir}"
+        }
 
-  // Execute unless DRY_RUN=true
-  if (!(env.DRY_RUN ?: 'false').toBoolean()) {
-    // commands.each { cmd ->
-    //   sh """
-    //     set -e
-    //     echo "Executing: ${cmd}"
-    //     ${cmd}
-    //   """
-    // }
-  }
-}
+        // create the target directory
+        sh "mkdir -p '${targetDir}'"
 
+        sh """
+      set -e
+      cp release/main/*.json '${targetDir}/'
+    """
 
-  }
+        if (fileExists(manifestFile)) {
+          sh "cp '${manifestFile}' '${targetDir}/'"
+    } else {
+          echo "WARN: ${manifestFile} not found; continuing without it."
+        }
+
+        // git add/commit/push
+        def branch = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+        def remote = sh(script: 'git remote get-url origin', returnStdout: true).trim()
+
+        // set author (so CI commits are clean)
+        sh '''
+      git config user.name  "CI Bot"
+      git config user.email "ci-bot@local"
+    '''
+
+        // stage the new directory only
+        sh "git add 'release/${stamp}'"
+
+        // commit if there are changes
+        def hasChanges = sh(script: 'git diff --cached --quiet || echo CHANGED', returnStdout: true).trim()
+        if (!hasChanges) {
+          echo "Nothing to commit under release/${stamp}"
+          return
+        }
+
+        sh "git commit -m 'chore(release-archive): add ${stamp} JSON snapshot'"
+
+        // push with credentials
+        withCredentials([usernamePassword(credentialsId: gitCredsId, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+          // rewrite origin to embed token safely for this push only
+          def safeRemote = remote.replace('https://', "https://${GIT_USER}:${GIT_PASS}@")
+          sh """
+        set -e
+        git push '${safeRemote}' '${branch}'
+      """
+        }
+
+        echo "Archived to release/${stamp} and pushed to '${branch}'."
+      }
+    }
+
+    }
     }
 
 @NonCPS
