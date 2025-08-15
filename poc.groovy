@@ -160,10 +160,10 @@ def call(Map config = [:]) {
         }
 
       def commands = []
-      if (manifest?.add?.api?.internet) commands += buildApiCommands(manifest.api.internet, nsInternet)
-      if (manifest?.add?.api?.intranet) commands += buildApiCommands(manifest.api.intranet, nsIntranet)
-      if (manifest?.update?.api?.internet) commands += buildApiCommands(manifest.api.internet, nsInternet)
-      if (manifest?.update?.api?.intranet) commands += buildApiCommands(manifest.api.intranet, nsIntranet)
+      if (manifest?.add?.api?.internet) commands += buildApiCommands(manifest?.add?.api?.internet, nsInternet)
+      if (manifest?.add?.api?.intranet) commands += buildApiCommands(manifest?.add?.api?.intranet, nsIntranet)
+      if (manifest?.update?.api?.internet) commands += buildApiCommands(manifest?.update?.api?.internet, nsInternet)
+      if (manifest?.update?.api?.intranet) commands += buildApiCommands(manifest?.update?.api?.intranet, nsIntranet)
 
       if (commands.isEmpty()) {
         echo 'No API deployments found in manifest'
