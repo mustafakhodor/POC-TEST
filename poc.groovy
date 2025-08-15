@@ -79,6 +79,7 @@ def call(Map config = [:]) {
             }
             def dataFile  = proj.dataFile ?: ''
             def entityMap = proj.entityDataMap ?: ''
+            def localizedDataMap = proj.localizedResourceDataMap ?: ''
 
             def parts = []
             parts << 'flowon-dynamics i'
@@ -88,6 +89,7 @@ def call(Map config = [:]) {
             parts << "-oc true"                           // <-- as requested
             if (dataFile)  parts << "-d \"${dataFile}\""
             if (entityMap) parts << "-m \"${entityMap}\""
+            if (localizedDataMap) parts << "-m \"${localizedDataMap}\""
 
             parts.join(' ')
           }.findAll { it } // drop nulls
