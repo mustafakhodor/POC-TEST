@@ -289,7 +289,7 @@ def call(Map config = [:]) {
       def repoDir            = "${env.WORKSPACE}/gh-src"                     // repo root
       def sourceJsonDir      = "${repoDir}/release/main"                     // where *.json live
       def manifestFile       = "${repoDir}/config/deployment.manifest.json"  // extra file to include
-      def gitCredsId         = (env.GIT_PUSH_CREDENTIALS_ID ?: 'gitlab_ci_token') // or your GitHub cred ID
+      def gitCredsId         = "85980cc8-2db9-4323-97e2-3c4ba4dace3b" // or your GitHub cred ID
   // ---------------
 
       def stamp = sh(script: 'date -u +%Y%m%d-%H%M%S', returnStdout: true).trim()
