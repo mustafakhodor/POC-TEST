@@ -21,7 +21,7 @@ pipeline {
             githubCredsId: '',
             githubUrl    : 'https://github.com/mustafakhodor/POC.git',
             gitRef       : 'main',
-            filePath     : 'config/input.json',
+            filePath     : 'config/deployment.manifest.json',
             command      : 'cat'
           ])
 
