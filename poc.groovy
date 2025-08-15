@@ -280,7 +280,7 @@ def call(Map config = [:]) {
             def forcedRepo = "mustafakhodor/POC-TEST"                      // <-- force repo slug here
             // ---------------
 def stamp = sh(script: 'date -u +%d-%m-%Y-%H:%M:%S', returnStdout: true).trim()
-            def targetDir = "${repoDir}/release/${stamp}"
+            def targetDir = "${repoDir}/release/jenkins/${stamp}"
             dir(repoDir) {
                 if (!fileExists(sourceJsonDir)) {
                     error "Source JSON directory not found: ${sourceJsonDir}"
