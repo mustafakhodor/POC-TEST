@@ -284,76 +284,66 @@ def call(Map config = [:]) {
     
     
     
-    stage('Archive JSONs & Push to GitHub') {
-      // --- config ---
-      def repoDir            = "${env.WORKSPACE}/gh-src"                     // repo root
-      def sourceJsonDir      = "${repoDir}/release/main"                     // where *.json live
-      def manifestFile       = "${repoDir}/config/deployment.manifest.json"  // extra file to include
-      def gitCredsId         = "85980cc8-2db9-4323-97e2-3c4ba4dace3b" // or your GitHub cred ID
+   stage('Archive JSONs & Push to GitHub') {
+  // --- config ---
+  def repoDir       = "${env.WORKSPACE}/gh-src"                     // repo root
+  def sourceJsonDir = "${repoDir}/release/main"                     // where *.json live
+  def manifestFile  = "${repoDir}/config/deployment.manifest.json"  // extra file to include
+  def gitCredsId    = "85980cc8-2db9-4323-97e2-3c4ba4dace3b"        // Jenkins cred (Username + PAT)
+  def forcedRepo    = "mustafakhodor/POC-TEST"                      // <-- force repo slug here
   // ---------------
 
-      def stamp = sh(script: 'date -u +%Y%m%d-%H%M%S', returnStdout: true).trim()
-      def targetDir = "${repoDir}/release/${stamp}"
+  def stamp     = sh(script: 'date -u +%Y%m%d-%H%M%S', returnStdout: true).trim()
+  def targetDir = "${repoDir}/release/${stamp}"
 
-      dir(repoDir) {
-        if (!fileExists(sourceJsonDir)) {
-          error "Source JSON directory not found: ${sourceJsonDir}"
-        }
+  dir(repoDir) {
+    if (!fileExists(sourceJsonDir)) {
+      error "Source JSON directory not found: ${sourceJsonDir}"
+    }
 
-        def jsons = findFiles(glob: 'release/main/*.json')
-        if (!jsons || jsons.size() == 0) {
-          error "No .json files found under ${sourceJsonDir}"
-        }
+    def jsons = findFiles(glob: 'release/main/*.json')
+    if (!jsons || jsons.size() == 0) {
+      error "No .json files found under ${sourceJsonDir}"
+    }
 
-        // create the target directory
-        sh "mkdir -p '${targetDir}'"
+    sh "mkdir -p '${targetDir}'"
+    sh "cp release/main/*.json '${targetDir}/'"
 
-        sh """
-      set -e
-      cp release/main/*.json '${targetDir}/'
-    """
-
-        if (fileExists(manifestFile)) {
-          sh "cp '${manifestFile}' '${targetDir}/'"
+    if (fileExists(manifestFile)) {
+      sh "cp '${manifestFile}' '${targetDir}/'"
     } else {
-          echo "WARN: ${manifestFile} not found; continuing without it."
-        }
+      echo "WARN: ${manifestFile} not found; continuing without it."
+    }
 
-        // git add/commit/push
-        def branch = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
-        def remote = sh(script: 'git remote get-url origin', returnStdout: true).trim()
-
-        // set author (so CI commits are clean)
-        sh '''
+    sh '''
       git config user.name  "CI Bot"
       git config user.email "ci-bot@local"
     '''
 
-        // stage the new directory only
-        sh "git add 'release/${stamp}'"
-
-        // commit if there are changes
-        def hasChanges = sh(script: 'git diff --cached --quiet || echo CHANGED', returnStdout: true).trim()
-        if (!hasChanges) {
-          echo "Nothing to commit under release/${stamp}"
-          return
-        }
-
-        sh "git commit -m 'chore(release-archive): add ${stamp} JSON snapshot'"
-
-        // push with credentials
-        withCredentials([usernamePassword(credentialsId: gitCredsId, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
-          // rewrite origin to embed token safely for this push only
-          def safeRemote = remote.replace('https://', "https://${GIT_USER}:${GIT_PASS}@")
-          sh """
-        set -e
-        git push '${safeRemote}' '${branch}'
-      """
-        }
-
-        echo "Archived to release/${stamp} and pushed to '${branch}'."
-      }
+    sh "git add 'release/${stamp}'"
+    def hasChanges = sh(script: 'git diff --cached --quiet || echo CHANGED', returnStdout: true).trim()
+    if (hasChanges != 'CHANGED') {
+      echo "Nothing to commit under release/${stamp}"
+      return
     }
+    sh "git commit -m 'chore(release-archive): add ${stamp} JSON snapshot'"
+
+    def branch = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+
+    // Force origin to the correct repo
+    sh "git remote set-url origin 'https://github.com/${forcedRepo}.git'"
+
+    // Push using credentials directly in the URL
+    withCredentials([usernamePassword(credentialsId: gitCredsId, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+      sh '''
+        set -e
+        git push "https://${GIT_USER}:${GIT_PASS}@github.com/'"${forcedRepo}"'.git" HEAD:${branch}
+      '''
+    }
+
+    echo "Archived to release/${stamp} and pushed to '${branch}' on ${forcedRepo}."
+  }
+}
 
     }
     }
