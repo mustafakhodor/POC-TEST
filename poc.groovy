@@ -319,7 +319,7 @@ def call(Map config = [:]) {
   sh """
     set -e
     # force the correct remote with PAT auth (no Groovy interpolation of secrets here)
-    git remote set-url origin https://$GIT_USER:$GIT_PASS@github.com/mustafakhodor/POC-TEST.git
+    git remote set-url origin https://$GIT_USER:$GIT_PASS@github.com/mustafakhodor/POC.git
     git push origin HEAD:main
   """
 }
