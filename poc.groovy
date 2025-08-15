@@ -184,6 +184,107 @@ def call(Map config = [:]) {
       }
     }
   
+  // === Build & (optionally) run API Gateway OpenAPI import commands ===
+stage('Build API Gateway Spec Commands') {
+      def workDir  = "${env.WORKSPACE}/gh-src"
+      def manifestPath = "${workDir}/${filePath}"
+      if (!fileExists(manifestPath)) {
+        error "Manifest file not found: ${manifestPath}"
+      }
+
+      def manifest = readJSON file: manifestPath
+
+  // Channels -> where to send these specs (use env to map per channel)
+  def channelInternet = (env.GW_CHANNEL_INTERNET ?: 'internet')
+  def channelIntranet = (env.GW_CHANNEL_INTRANET ?: 'intranet')
+
+  // Service name shaping (prefix/suffix optional)
+  def svcPrefix = (env.API_SERVICE_PREFIX ?: '').trim()
+  def svcSuffix = (env.API_SERVICE_SUFFIX ?: '').trim()
+
+  // Command templates (override these with your real gateway CLI)
+  // Available placeholders: ${SPEC}, ${SERVICE}, ${NAME}, ${PROJECT}, ${CHANNEL}
+  def tplInternet = (env.GW_CMD_INTERNET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
+  def tplIntranet = (env.GW_CMD_INTRANET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
+
+  // Where specs live (prefix path if your manifest paths are relative)
+  def specsRoot = (env.API_SPEC_ROOT ?: workDir)
+
+  // Helpers
+  def resolveServiceName = { String project ->
+    def base = (project ?: '').toLowerCase().replaceAll('\\s+', '-')
+    def parts = []
+    if (svcPrefix) parts << svcPrefix
+    parts << base
+    if (svcSuffix) parts << svcSuffix
+    parts.findAll { it }.join('-')
+  }
+
+  def resolveSpecPath = { String p ->
+    if (!p) return null
+    // If manifest path starts with '/', treat as repo-relative under gh-src
+    if (p.startsWith('/')) return "${workDir}${p}"
+    // Otherwise, join with specsRoot (defaults to gh-src)
+    return "${specsRoot}/${p}"
+  }
+
+  def fill = { String tpl, Map vars ->
+    tpl
+      .replace('${SPEC}',    vars.SPEC    ?: '')
+      .replace('${SERVICE}', vars.SERVICE ?: '')
+      .replace('${NAME}',    vars.NAME    ?: '')
+      .replace('${PROJECT}', vars.PROJECT ?: '')
+      .replace('${CHANNEL}', vars.CHANNEL ?: '')
+  }
+
+  def buildForList = { List apiList, String channel, String tpl ->
+    (apiList ?: []).collect { api ->
+      def project = api?.project
+      def name    = api?.name ?: project
+      def specRel = api?.openApiSpecs
+      def specAbs = resolveSpecPath(specRel)
+      if (!project || !specAbs) {
+        echo "Skipping API (missing project or openApiSpecs): ${groovy.json.JsonOutput.toJson(api)}"
+        return null
+      }
+      if (!fileExists(specAbs)) {
+        error "OpenAPI spec not found: ${specAbs} (from ${specRel})"
+      }
+      def service = resolveServiceName(project)
+      fill(tpl, [SPEC: specAbs, SERVICE: service, NAME: name, PROJECT: project, CHANNEL: channel])
+    }.findAll { it }
+  }
+
+  // Collect APIs from both add & update
+  def addInternet    = (manifest?.add?.api?.internet    ?: [])
+  def addIntranet    = (manifest?.add?.api?.intranet    ?: [])
+  def updateInternet = (manifest?.update?.api?.internet ?: [])
+  def updateIntranet = (manifest?.update?.api?.intranet ?: [])
+
+  def commands = []
+  commands += buildForList(addInternet   + updateInternet, channelInternet, tplInternet)
+  commands += buildForList(addIntranet   + updateIntranet, channelIntranet, tplIntranet)
+
+  if (commands.isEmpty()) {
+    echo 'No API gateway imports to process (no openApiSpecs found).'
+    return
+  }
+
+  echo "Gateway import commands:\n${commands.join('\n')}"
+
+  // Execute unless DRY_RUN=true
+  if (!(env.DRY_RUN ?: 'false').toBoolean()) {
+    commands.each { cmd ->
+      sh """
+        set -e
+        echo "Executing: ${cmd}"
+        ${cmd}
+      """
+    }
+  }
+}
+
+
   }
     }
 
