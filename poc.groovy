@@ -106,13 +106,13 @@ def call(Map config = [:]) {
       echo "Generated commands:\n${commands.join('\n')}"
 
       // Execute them (remove this loop if you only want to print)
-      commands.each { cmd ->
-        sh """
-          set -e
-          echo "Executing: ${cmd}"
-          ${cmd}
-        """
-      }
+      // commands.each { cmd ->
+      //   sh """
+      //     set -e
+      //     echo "Executing: ${cmd}"
+      //     ${cmd}
+      //   """
+      // }
     }
   }
 }
