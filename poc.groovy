@@ -311,12 +311,19 @@ def call(Map config = [:]) {
                 // Force origin to the correct repo
                 sh "git remote set-url origin 'https://github.com/${forcedRepo}.git'"
                 // Push using credentials directly in the URL
-                withCredentials([usernamePassword(credentialsId: gitCredsId, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
-                    sh '''
-        set -e
-        git push "https://${GIT_USER}:${GIT_PASS}@github.com/'"${forcedRepo}"'.git" HEAD:main
-      '''
-                }
+                withCredentials([usernamePassword(
+  credentialsId: gitCredsId,
+  usernameVariable: 'GIT_USER',
+  passwordVariable: 'GIT_PASS'
+)]) {
+  sh """
+    set -e
+    # force the correct remote with PAT auth (no Groovy interpolation of secrets here)
+    git remote set-url origin https://$GIT_USER:$GIT_PASS@github.com/mustafakhodor/POC-TEST.git
+    git push origin HEAD:main
+  """
+}
+
                 echo "Archived to release/${stamp} and pushed to '${branch}' on ${forcedRepo}."
             }
         }
