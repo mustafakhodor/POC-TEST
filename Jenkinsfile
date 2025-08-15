@@ -25,7 +25,6 @@ pipeline {
             command      : 'cat'
           ])
 
-          echo "Parsed keys: ${result instanceof Map ? (result.keySet() as List) : 'N/A'}"
         }
       }
     }
