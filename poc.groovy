@@ -117,16 +117,13 @@ def call(Map config = [:]) {
 
 // Scripted stage — NO 'steps { }' here
 stage('Build API Deployment Commands') {
-  // where the repo was checked out earlier
-  def workDir      = "${env.WORKSPACE}/gh-src"
-  // change if your manifest path is different
-  def manifestPath = "${workDir}/deployment.manifest.json"
+  def workDir  = "${env.WORKSPACE}/gh-src"
+      def manifestPath = "${workDir}/${filePath}"
+      if (!fileExists(manifestPath)) {
+        error "Manifest file not found: ${manifestPath}"
+      }
 
-  if (!fileExists(manifestPath)) {
-    error "Manifest file not found: ${manifestPath}"
-  }
-
-  def manifest = readJSON file: manifestPath
+      def manifest = readJSON file: manifestPath
 
   // Namespaces (override via env if you want different ones per channel)
   def nsDefault   = (env.KUBE_NAMESPACE ?: 'default')
