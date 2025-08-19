@@ -695,7 +695,6 @@ def call(Map cfg = [:]) {
         lines << "# imagePath: ${pkg.imagePath}"
         lines << "# action   : ${pkg.action}"
         lines << "# config   : ${pkg.configFilePath}"
-        lines << "# release  : ${rel}   namespace: ${ns}"
         lines << '# ==================================================================='
 
         if (pkg.configFilePath) {
