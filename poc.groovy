@@ -587,8 +587,6 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract APIs command from manifest') {
-    steps {
-      script {
         def manifest = readJSON file: 'deployment-manifest.json'
 
         def apis = []
@@ -663,8 +661,8 @@ def call(Map cfg = [:]) {
         // echo "Generated API mock commands:\n" + lines.join('\n')
 
       }
-    }
-  }
+  
+  
 
   stage('Extract gateways command from manifest') { echo 'TODO' }
   stage('Extract Integration Server command from manifest') { echo 'TODO' }
