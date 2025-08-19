@@ -3,9 +3,6 @@ import groovy.transform.Field
 @Field String TARGET_ENV_URL = null
 
 def call(Map cfg = [:]) {
-  // normalize ENV from caller
-  final String chosenEnv = (cfg.environment ?: '').toString()
-
   stage('Determine target environment URL') {
     def envUrlByName = [
       dev   : 'https://devmerge.netways1.com',
@@ -15,10 +12,10 @@ def call(Map cfg = [:]) {
       prod  : 'https://merge.netways1.com'
     ]
 
-    def key = chosenEnv.toLowerCase().replaceAll(/\s+/, '').trim()
+    def key = (params.ENVIRONMENT ?: '').toLowerCase().replaceAll(/\s+/, '').trim()
     def url = envUrlByName[key]
     if (!url) {
-      error "No URL mapping found for ENVIRONMENT='${chosenEnv}'. Update envUrlByName."
+      error "No URL mapping found for ENVIRONMENT='${params.ENVIRONMENT}'. Update envUrlByName."
     }
 
     TARGET_ENV_URL = url
@@ -26,11 +23,466 @@ def call(Map cfg = [:]) {
   }
 
   stage('Create deployment manifest file') {
-    // keep your literal; we’ll write it as-is
-    def manifestJson = '''<THE SAME LARGE JSON YOU ALREADY HAVE>'''
-    // If you want strict validation before writing, uncomment the next line:
-    // readJSON text: manifestJson
+    def manifestJson = '''{
+      "liferay": {
+        "clientExtensions": {
+          "add": [
+            {
+              "name": "AssetManagement",
+              "version": "1.0.0",
+              "filePath": "/asset-module/v-99-77daf4db/liferay/client-extensions/asset-management-client-extension.zip",
+              "provenance": {
+                "sourceBranch": "main",
+                "sourceCommitId": "77daf4db",
+                "buildNumber": "99",
+                "releaseNotes": ""
+              }
+            }
+          ],
+          "update": [
+            {
+              "name": "AssetManagement",
+              "version": "1.0.0",
+              "filePath": "/asset-module/v-99-77daf4db/liferay/client-extensions/asset-management-client-extension.zip",
+              "provenance": {
+                "sourceBranch": "main",
+                "sourceCommitId": "77daf4db",
+                "buildNumber": "99",
+                "releaseNotes": ""
+              }
+            }
+          ],
+          "delete": [
+            {
+              "name": "AssetManagement",
+              "version": "1.0.0"
+            }
+          ]
+        },
+        "contentPages": {
+          "add": [
+            {
+              "name": "HomePage",
+              "version": "1.0.0",
+              "filePath": "/asset-module/v-99-77daf4db/liferay/content-pages/homepage.lar",
+              "provenance": {
+                "sourceBranch": "main",
+                "sourceCommitId": "77daf4db",
+                "buildNumber": "99",
+                "releaseNotes": ""
+              }
+            }
+          ],
+          "update": [],
+          "delete": []
+        }
+      },
+      "dynamics": {
+        "solutions": {
+          "add": [
+            {
+              "solution": "AssetManagement",
+              "version": "1.0.0.9",
+              "managedSolution": "/asset-module/v-99-77daf4db/crm/Asset_Management_managed.zip",
+              "unmanagedSolution": "/asset-module/v-99-77daf4db/crm/Asset_Management_unmanaged.zip",
+              "provenance": {
+                "sourceBranch": "main",
+                "sourceCommitId": "77daf4db",
+                "buildNumber": "99",
+                "releaseNotes": ""
+              },
+              "projects": [
+                {
+                  "name": "Asset Management",
+                  "flop": "/asset-module/v-99-77daf4db/crm/Dispute/src/Dispute.flop",
+                  "localizedResourceDataMap": "/asset-module/v-99-77daf4db/crm/Dispute/src/localizedresources.datamap.xml",
+                  "entityDataMap": "/asset-module/v-99-77daf4db/crm/Dispute/src/dev-entity.datamap.xml",
+                  "dataSpecFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.spec.xml",
+                  "dataFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Asset Management Internet",
+                      "project": "Asset Management",
+                      "openApiSpecs": "/asset-module/v-99-77daf4db/crm/Asset_Management/src/Asset_Management_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Asset Management Intranet",
+                      "project": "Asset Management",
+                      "openApiSpecs": "/asset-module/v-99-77daf4db/crm/Asset_Management/src/Asset_Management_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Restart",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "update": [
+            {
+              "solution": "LegalFiles",
+              "version": "1.0.0.748",
+              "managedSolution": "/legal-file-module/v-99-77daf4db/crm/LegalFiles_managed.zip",
+              "unmanagedSolution": "/legal-file-module/v-99-77daf4db/crm/LegalFiles_unmanaged.zip",
+              "provenance": {
+                "sourceBranch": "main",
+                "sourceCommitId": "77daf4db",
+                "buildNumber": "99",
+                "releaseNotes": ""
+              },
+              "projets": [
+                {
+                  "name": "Dispute",
+                  "flop": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/Dispute.flop",
+                  "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/localizedresources.datamap.xml",
+                  "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/dev-entity.datamap.xml",
+                  "dataSpecFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.spec.xml",
+                  "dataFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Dispute Internet",
+                      "project": "Dispute",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/Dispute_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Dispute Intranet",
+                      "project": "Dispute",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/Dispute_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Minors",
+                  "flop": "/legal-file-module/v-99-77daf4db/crm/Minors/src/Minors.flop",
+                  "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Minors/src/localizedresources.datamap.xml",
+                  "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Minors/src/dev-entity.datamap.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Minors Internet",
+                      "project": "Minors",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Minors/src/Minors_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Minors Intranet",
+                      "project": "Minors",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Minors/src/Minors_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Bankruptcy",
+                  "flop": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/Bankruptcy.flop",
+                  "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/localizedresources.datamap.xml",
+                  "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/dev-entity.datamap.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Bankruptcy Internet",
+                      "project": "Bankruptcy",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/Bankruptcy_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Bankruptcy Intranet",
+                      "project": "Bankruptcy",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/Bankruptcy_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Estate",
+                  "flop": "/legal-file-module/v-99-77daf4db/crm/Estate/src/Estate.flop",
+                  "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Estate/src/localizedresources.datamap.xml",
+                  "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Estate/src/dev-entity.datamap.xml",
+                  "dataSpecFile": "/legal-file-module/v-99-77daf4db/crm/Estate/src/data.spec.xml",
+                  "dataFile": "/legal-file-module/v-99-77daf4db/crm/Estate/src/data.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Estate Internet",
+                      "project": "Estate",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Estate/src/Estate_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Estate Intranet",
+                      "project": "Estate",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Estate/src/Estate_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Judgment Post Action",
+                  "flop": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/Judgment_Post_Action.flop",
+                  "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/localizedresources.datamap.xml",
+                  "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/dev-entity.datamap.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Judgment Post Action Internet",
+                      "project": "Judgment Post Action",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/Judgment_Post_Action_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Judgment Post Action Intranet",
+                      "project": "Judgment Post Action",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/Judgment_Post_action_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Marriage",
+                  "flop": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/Marriage.flop",
+                  "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/entity.datamap.xml",
+                  "provenance": {
+                    "sourceBranch": "main",
+                    "sourceCommitId": "77daf4db",
+                    "buildNumber": "99",
+                    "releaseNotes": ""
+                  },
+                  "api": [
+                    {
+                      "name": "Marriage Internet",
+                      "project": "Marriage",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/Marriage_Internet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    },
+                    {
+                      "name": "Marriage Intranet",
+                      "project": "Marriage",
+                      "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/Marriage_Intranet.json",
+                      "image": {
+                        "name": "adib-is-image",
+                        "version": "1.0.0",
+                        "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0",
+                        "action": "Upgrade",
+                        "provenance": {
+                          "sourceBranch": "main",
+                          "sourceCommitId": "77daf4db",
+                          "buildNumber": "99",
+                          "releaseNotes": ""
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "delete": []
+        }
+      },
+      "integration": {
+        "packages": {
+          "add": [
+            {
+              "name": "ADIB",
+              "version": "1.0.0",
+              "image": {
+                "name": "adib-is-image",
+                "version": "1.0.0",
+                "path": "docker-registry.moj.gov.ae/repository/moj-docker/just/adib-is-image:1.0.0",
+                "action": "Upgrade",
+                "provenance": {
+                  "sourceBranch": "main",
+                  "sourceCommitId": "77daf4db",
+                  "buildNumber": "99",
+                  "releaseNotes": ""
+                }
+              },
+              "configFilePath": "/asset-module/v-99-77daf4db/integration/adib/GlobalConfig_dev.json"
+            }
+          ],
+          "update": [],
+          "delete": []
+        }
+      }
+    }'''
     writeFile file: 'deployment-manifest.json', text: manifestJson
+
     echo "Generated ${pwd()}/deployment-manifest.json"
   }
 
@@ -99,8 +551,8 @@ def call(Map cfg = [:]) {
       echo 'No dynamics solution/project commands generated.'
     } else {
       echo "Generated commands:\n${commands.join('\n')}"
-      // To execute:
-      // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
+    // If you want to execute them:
+    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
     }
   }
 
@@ -108,7 +560,7 @@ def call(Map cfg = [:]) {
     def manifest = readJSON file: 'deployment-manifest.json'
 
     def clientExts = []
-    clientExts += manifest?.liferay?.clientExtensions?.add    ?: []
+    clientExts += manifest?.liferay?.clientExtensions?.add ?: []
     clientExts += manifest?.liferay?.clientExtensions?.update ?: []
 
     if (!clientExts) {
@@ -116,41 +568,26 @@ def call(Map cfg = [:]) {
       return
     }
 
-    // Take simple strings from caller (you said you want strings for now)
-    def password    = (cfg.password    ?: 'yourPassword')
-    def liferayUser = (cfg.liferayUser ?: 'yourUser')
-    def ip          = (cfg.ip          ?: '1.2.3.4')
-
-    // Prefer caller-provided workspace; fallback to pwd()
-    def ws = (cfg.WORKSPACE ?: pwd())
-
     def commands = []
     clientExts.each { ext ->
-      def destPath = ext.filePath?.trim()
-      if (!destPath) {
-        echo "WARN: client extension '${ext.name ?: '?'}' missing filePath -> skipping"
-        return
-      }
-
-      def cmd = """sshpass -p '${password}' scp -o StrictHostKeyChecking=no -r \
-${ws}/artifacts/clientextensions/*.zip \
-${liferayUser}@${ip}:${destPath}"""
-      commands << cmd
+      def destPath = ext.filePath   
+      def cmd = """sshpass -p password scp -o StrictHostKeyChecking=no -r \\
+                 ${pwd()}/artifacts/clientextensions/*.zip \\
+                 liferayUser@ip:${destPath}"""
+      commands << cmd.stripIndent()
     }
 
     if (commands.isEmpty()) {
       echo 'No client extension commands generated.'
-    } else {
+  } else {
       echo "Generated Client Extension commands:\n${commands.join('\n')}"
-      // To execute:
-      // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
+    // To actually run them:
+    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
     }
   }
 
   stage('Extract APIs command from manifest') { echo 'TODO' }
   stage('Extract gateways command from manifest') { echo 'TODO' }
   stage('Extract Integration Server command from manifest') { echo 'TODO' }
-
-  // Return a small summary map so the caller can log/use values
-  return [environment: chosenEnv, url: TARGET_ENV_URL]
 }
+return this
