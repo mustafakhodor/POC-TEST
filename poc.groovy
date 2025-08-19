@@ -1,9 +1,9 @@
 def call(Map cfg = [:]) {
-stage('Determine target environment URL') {
-  def selectedEnv = (cfg.environment ?: (binding.hasVariable('params') ? params.ENVIRONMENT : null)) ?: ''
-  def key = selectedEnv.toLowerCase().replaceAll(/\s+/, '').trim()
+  stage('Determine target environment URL') {
+    def selectedEnv = (cfg.environment ?: (binding.hasVariable('params') ? params.ENVIRONMENT : null)) ?: ''
+    def key = selectedEnv.toLowerCase().replaceAll(/\s+/, '').trim()
 
-  def envUrlByName = [
+    def envUrlByName = [
     dev   : 'https://devmerge.netways1.com',
     qa    : 'https://qamerge.netways1.com',
     stage1: 'https://stage1merge.netways1.com',
@@ -11,18 +11,17 @@ stage('Determine target environment URL') {
     prod  : 'https://merge.netways1.com'
   ]
 
-  def url = envUrlByName[key]
-  if (!url) { error "No URL mapping for ENVIRONMENT='${selectedEnv}' (key='${key}')" }
+    def url = envUrlByName[key]
+    if (!url) { error "No URL mapping for ENVIRONMENT='${selectedEnv}' (key='${key}')" }
 
-  // ✅ set as String using bracket notation
-  env['TARGET_ENV_URL'] = url.toString()
+    // ✅ set as String using bracket notation
+    env['TARGET_ENV_URL'] = "${url}"
 
-  echo "url var: ${url}"
-  echo "env map after set: ${env['TARGET_ENV_URL']}"
-  // Optional: verify from a shell (Linux agents)
-  sh 'echo TARGET_ENV_URL=$TARGET_ENV_URL'
-}
-
+    echo "url var: ${url}"
+    echo "env map after set: ${env['TARGET_ENV_URL']}"
+    // Optional: verify from a shell (Linux agents)
+    sh 'echo TARGET_ENV_URL=$TARGET_ENV_URL'
+  }
 
   stage('Create deployment manifest file') {
     def manifestJson = '''{
