@@ -12,14 +12,15 @@ def call(Map cfg = [:]) {
     echo "Normalized key: '${key}'"
 
     def url = envUrlByName[key]
+    echo "$url"
     if (!url) {
-      error "No URL mapping found for ENVIRONMENT='${selectedEnv}'. Update envUrlByName."
+      error "No URL mapping found for ENVIRONMENT='${params.ENVIRONMENT}'. Update envUrlByName."
     }
 
     env.TARGET_ENV_URL = url
     echo "Resolved TARGET_ENV_URL: ${env.TARGET_ENV_URL}"
 
-    currentBuild.displayName = "#${env.BUILD_NUMBER} • ${selectedEnv}"
+    currentBuild.displayName = "#${env.BUILD_NUMBER} • ${params.ENVIRONMENT}"
   }
 
   stage('Create deployment manifest file') {
