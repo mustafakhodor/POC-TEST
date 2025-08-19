@@ -579,14 +579,93 @@ def call(Map cfg = [:]) {
 
     if (commands.isEmpty()) {
       echo 'No client extension commands generated.'
-  } else {
+    } else {
       echo "Generated Client Extension commands:\n${commands.join('\n')}"
     // To actually run them:
     // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
     }
   }
 
-  stage('Extract APIs command from manifest') { echo 'TODO' }
+  stage('Extract APIs command from manifest') {
+    steps {
+      script {
+        def manifest = readJSON file: 'deployment-manifest.json'
+
+        def apis = []
+        def collectApis = { List solutions, String bucket ->
+          (solutions ?: []).each { sol ->
+            def solName = sol.solution ?: '(unknown-solution)'
+            (sol.projects ?: sol.projets ?: []).each { proj ->
+              def projName = proj.name ?: '(unknown-project)'
+              (proj.api ?: []).each { api ->
+                apis << [
+                  solution: solName,
+                  project : projName,
+                  name    : api.name ?: '(unnamed-api)',
+                  specs   : api.openApiSpecs ?: '',
+                  image   : api.image ?: [:],
+                  bucket  : bucket
+                ]
+              }
+            }
+          }
+        }
+
+        def solutionsNode = manifest?.dynamics?.solutions
+        if (solutionsNode) {
+          collectApis(solutionsNode.add    as List ?: [], 'add')
+          collectApis(solutionsNode.update as List ?: [], 'update')
+        }
+
+        if (apis.isEmpty()) {
+          echo 'No APIs found under dynamics.solutions.*.projects[].api[].'
+          return
+        }
+
+
+        echo "${apis}"
+
+        // // Build MOCK commands for each API
+        // def lines = []
+        // apis.each { a ->
+        //   def specsPath = (a.specs ?: '').replace('replaceWorkspace', '${WORKSPACE}')
+        //   def apiVar    = a.name.replaceAll(/\W+/, '_').toLowerCase()   // var-friendly
+        //   lines << "# ==================================================================="
+        //   lines << "# ${a.bucket.toUpperCase()} :: ${a.solution} / ${a.project} / ${a.name}"
+        //   lines << "# ==================================================================="
+        //   lines << "echo \"[MOCK] Check if API exists: ${a.name}\""
+        //   lines << "echo http GET \\${API_GATEWAY_URL}/rest/apigateway/apis --auth \\${CRED_ID}"
+        //   lines << ""
+        //   lines << "echo \"[MOCK] Create API if missing with specs: ${specsPath}\""
+        //   lines << "echo curl -X POST \\${API_GATEWAY_URL}/rest/apigateway/apis \\"
+        //   lines << "  -H \"Accept: application/json\" -H \"Content-Type: multipart/form-data\" \\"
+        //   lines << "  -u \\${API_USER}:\\${API_PASS} \\"
+        //   lines << "  -F \"file=@${specsPath}\" -F \"apiName=${a.name}\" -F \"type=\\${API_TYPE}\" -F \"apiVersion=1.0\""
+        //   lines << ""
+        //   lines << "echo \"[MOCK] Deactivate API before update: \\${${apiVar}_ID}\""
+        //   lines << "echo curl -X PUT \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID}/deactivate -u \\${API_USER}:\\${API_PASS}"
+        //   lines << ""
+        //   lines << "echo \"[MOCK] Update API: \\${${apiVar}_ID} with specs: ${specsPath}\""
+        //   lines << "echo curl -X PUT \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID}?overwriteTags=true \\"
+        //   lines << "  -H \"Accept: application/json\" -H \"Content-Type: multipart/form-data\" \\"
+        //   lines << "  -u \\${API_USER}:\\${API_PASS} \\"
+        //   lines << "  -F \"file=@${specsPath}\" -F \"apiName=${a.name}\" -F \"type=\\${API_TYPE}\" -F \"apiVersion=1.0\""
+        //   lines << ""
+        //   lines << "echo \"[MOCK] Activate API: \\${${apiVar}_ID}\""
+        //   lines << "echo curl -X PUT \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID}/activate -u \\${API_USER}:\\${API_PASS}"
+        //   lines << ""
+        //   lines << "echo \"[MOCK] Verify API: \\${${apiVar}_ID}\""
+        //   lines << "echo http GET \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID} --auth \\${CRED_ID}"
+        //   lines << ""
+        // }
+
+        // // Print to console
+        // echo "Generated API mock commands:\n" + lines.join('\n')
+
+      }
+    }
+  }
+
   stage('Extract gateways command from manifest') { echo 'TODO' }
   stage('Extract Integration Server command from manifest') { echo 'TODO' }
 }
