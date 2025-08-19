@@ -1,22 +1,26 @@
 def call(Map cfg = [:]) {
-  def selectedEnv = (cfg.environment ?: (binding.hasVariable('params') ? params.ENVIRONMENT : null)) ?: ''
-  echo "Selected ENVIRONMENT: '${selectedEnv}'"
-
-  def envUrlByName = [
+  stage('Determine target environment URL') {
+    def envUrlByName = [
     dev   : 'https://devmerge.netways1.com',
     qa    : 'https://qamerge.netways1.com',
     stage1: 'https://stage1merge.netways1.com',
     stage2: 'https://stage2merge.netways1.com',
     prod  : 'https://merge.netways1.com'
   ]
-  def key = selectedEnv.toLowerCase().replaceAll(/\s+/, '')
-  echo "${key}"
-  def url = envUrlByName[key]
-  if (!url) {
-    error "No URL mapping found for ENVIRONMENT='${selectedEnv}'. Update envUrlByName."
+
+    def key = params.ENVIRONMENT.toLowerCase().replaceAll(/\s+/, '')
+    echo "Normalized key: '${key}'"
+
+    def url = envUrlByName[key]
+    if (!url) {
+      error "No URL mapping found for ENVIRONMENT='${selectedEnv}'. Update envUrlByName."
+    }
+
+    env.TARGET_ENV_URL = url
+    echo "Resolved TARGET_ENV_URL: ${env.TARGET_ENV_URL}"
+
+    currentBuild.displayName = "#${env.BUILD_NUMBER} • ${selectedEnv}"
   }
-  env.TARGET_ENV_URL = url
-  echo "Resolved TARGET_ENV_URL: ${env.TARGET_ENV_URL}"
 
   stage('Create deployment manifest file') {
     def manifestJson = '''{
@@ -145,8 +149,8 @@ def call(Map cfg = [:]) {
           parts << 'flowon-dynamics i'
           parts << "--connectionstring \"${env.TARGET_ENV_URL}\""
           parts << "-s \"${managed}\""
-          parts << "-oc true"
-          parts << "-l Verbose"
+          parts << '-oc true'
+          parts << '-l Verbose'
           cmds << parts.join(' ')
         } else {
           echo "WARN: dynamics entry missing 'managedSolution' -> skipping solution import"
@@ -168,7 +172,7 @@ def call(Map cfg = [:]) {
           if (proj.entityDataMap)            p << "-m \"${proj.entityDataMap}\""
           if (proj.localizedResourceDataMap) p << "-m \"${proj.localizedResourceDataMap}\""
           if (proj.dataFile)                 p << "-d \"${proj.dataFile}\""
-          p << "-l Verbose"
+          p << '-l Verbose'
           cmds << p.join(' ')
         }
         return cmds
@@ -183,8 +187,8 @@ def call(Map cfg = [:]) {
       echo 'No dynamics entries found to build commands.'
     } else {
       echo "Generated commands:\n${commands.join('\n')}"
-      // To execute them for real, uncomment:
-      // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
+    // To execute them for real, uncomment:
+    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
     }
   }
 
@@ -192,7 +196,7 @@ def call(Map cfg = [:]) {
   stage('Extract Client Extension command from manifest') { echo 'TODO' }
   stage('Extract APIs command from manifest')            { echo 'TODO' }
   stage('Extract gateways command from manifest')        { echo 'TODO' }
-  stage('Extract Integration Server command from manifest'){ echo 'TODO' }
+  stage('Extract Integration Server command from manifest') { echo 'TODO' }
 
   // Return anything you want to the caller
   return [env: selectedEnv, url: env.TARGET_ENV_URL]
