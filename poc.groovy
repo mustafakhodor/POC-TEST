@@ -570,7 +570,7 @@ def call(Map cfg = [:]) {
 
     def commands = []
     clientExts.each { ext ->
-      def destPath = ext.filePath   
+      def destPath = ext.filePath
       def cmd = """sshpass -p password scp -o StrictHostKeyChecking=no -r \\
                  ${pwd()}/artifacts/clientextensions/*.zip \\
                  liferayUser@ip:${destPath}"""
@@ -587,78 +587,135 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract APIs command from manifest') {
-        def manifest = readJSON file: 'deployment-manifest.json'
+    def manifest = readJSON file: 'deployment-manifest.json'
 
-        def apis = []
-        def collectApis = { List solutions, String bucket ->
-          (solutions ?: []).each { sol ->
-            def solName = sol.solution ?: '(unknown-solution)'
-            (sol.projects ?: sol.projets ?: []).each { proj ->
-              def projName = proj.name ?: '(unknown-project)'
-              (proj.api ?: []).each { api ->
-                apis << [
-                  name    : api.name,
-                  project : projName,
-                  specs   : api.openApiSpecs,
-                  image   : api.image.path,
-                  action   : api.image.action,
-                ]
-              }
-            }
+    def apis = []
+    def collectApis = { List solutions, String bucket ->
+      (solutions ?: []).each { sol ->
+        def solName = sol.solution ?: '(unknown-solution)'
+        (sol.projects ?: sol.projets ?: []).each { proj ->
+          def projName = proj.name ?: '(unknown-project)'
+          (proj.api ?: []).each { api ->
+            apis << [
+              name    : api.name,
+              project : projName,
+              specs   : api.openApiSpecs,
+              image   : api.image.path,
+              action   : api.image.action,
+            ]
           }
         }
+      }
+    }
 
-        def solutionsNode = manifest?.dynamics?.solutions
-        if (solutionsNode) {
-          collectApis(solutionsNode.add    as List ?: [], 'add')
-          collectApis(solutionsNode.update as List ?: [], 'update')
-        }
+    def solutionsNode = manifest?.dynamics?.solutions
+    if (solutionsNode) {
+      collectApis(solutionsNode.add    as List ?: [], 'add')
+      collectApis(solutionsNode.update as List ?: [], 'update')
+    }
 
-        if (apis.isEmpty()) {
-          echo 'No APIs found under dynamics.solutions.*.projects[].api[].'
-          return
-        }
+    if (apis.isEmpty()) {
+      echo 'No APIs found under dynamics.solutions.*.projects[].api[].'
+      return
+    }
 
+    apis.each { api ->
+      echo '======================================================='
+      echo "API: ${api.name} (Project: ${api.project})"
+      echo "Specs: ${api.specs}"
+      echo "Image: ${api.image}"
+      echo "Action: ${api.action}"
+      echo '======================================================='
 
-        apis.each { api ->
-        echo "======================================================="
-        echo "API: ${api.name} (Project: ${api.project})"
-        echo "Specs: ${api.specs}"
-        echo "Image: ${api.image}"
-        echo "Action: ${api.action}"
-        echo "======================================================="
-
-        // === Mock Deployment Flow ===
-        if (api.action?.toLowerCase() == 'upgrade') {
-          echo "[MOCK] helm upgrade -i ${api.project.toLowerCase()} ${api.image} --namespace <namespace>"
-        } else if (api.action?.toLowerCase() == 'restart') {
-          echo "[MOCK] kubectl rollout restart deployment/${api.project.toLowerCase()} -n <namespace>"
-        }
-
-        echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
-
-        echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
-
-        echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-
-        echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-
-        echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
-
-        echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
+      // === Mock Deployment Flow ===
+      if (api.action?.toLowerCase() == 'upgrade') {
+        echo "[MOCK] helm upgrade -i ${api.project.toLowerCase()} ${api.image} --namespace <namespace>"
+    } else if (api.action?.toLowerCase() == 'restart') {
+        echo "[MOCK] kubectl rollout restart deployment/${api.project.toLowerCase()} -n <namespace>"
       }
 
-       // deploy to k8s ( if action upgrade helm upgrade else restart pod)
-       //  check if api exist
-       // if exist and active then deactivate it then update
-       // else create it
-       // activate api
-       // verify api
-    }
-  
-  
+      echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
 
-  stage('Extract gateways command from manifest') { echo 'TODO' }
-  stage('Extract Integration Server command from manifest') { echo 'TODO' }
+      echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
+
+      echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+
+      echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+
+      echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
+
+      echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
+    }
+
+  // deploy to k8s ( if action upgrade helm upgrade else restart pod)
+  //  check if api exist
+  // if exist and active then deactivate it then update
+  // else create it
+  // activate api
+  // verify api
+  }
+
+  stage('Extract Integration Server command from manifest') {
+      def manifest = readJSON file: 'deployment-manifest.json'
+
+      def pkgs = []
+      def collectPkgs = { List list, String bucket ->
+        (list ?: []).each { pkg ->
+          pkgs << [
+            name           : pkg.name ?: '',
+            version        : pkg.version ?: '',
+            imageName      : pkg.image?.name ?: '',
+            imagePath      : pkg.image?.path ?: '',
+            imageVersion   : pkg.image?.version ?: '',
+            action         : pkg.image?.action ?: '',
+            configFilePath : pkg.configFilePath ?: '',
+            bucket         : bucket
+          ]
+        }
+      }
+
+      def pnode = manifest?.integration?.packages
+      if (pnode) {
+        collectPkgs(pnode.add    as List ?: [], 'add')
+        collectPkgs(pnode.update as List ?: [], 'update')
+      }
+
+      if (pkgs.isEmpty()) {
+        echo 'No integration packages found under integration.packages.(add|update).'
+        return
+      }
+
+      def lines = []
+      pkgs.each { pkg ->
+        def rel = "integration-${pkg.name.replaceAll(/\\W+/, '-').toLowerCase()}"// change later if you want to map by ENVIRONMENT
+
+        lines << '# ==================================================================='
+        lines << "# ${pkg.bucket.toUpperCase()} :: ${pkg.name} v${pkg.version}"
+        lines << "# imageName: ${pkg.imageName}"
+        lines << "# imagePath: ${pkg.imagePath}"
+        lines << "# action   : ${pkg.action}"
+        lines << "# config   : ${pkg.configFilePath}"
+        lines << "# release  : ${rel}   namespace: ${ns}"
+        lines << '# ==================================================================='
+
+        if (pkg.configFilePath) {
+          lines << "echo \"[MOCK] Using integration config: ${pkg.configFilePath}\""
+        }
+
+        if (pkg.action?.equalsIgnoreCase('Upgrade')) {
+          lines << 'echo \"[MOCK] Helm upgrade integration server\"'
+          lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n ${ns} \\"
+          lines << "  --set image.repository=${pkg.imagePath.split(':')[0]} \\"
+          lines << "  --set image.tag=${(pkg.imagePath.contains(':') ? pkg.imagePath.split(':')[-1] : pkg.imageVersion)} \\"
+          (pkg.configFilePath ? lines << "  --set-file app.config=${pkg.configFilePath}" : null)
+        } else {
+          lines << 'echo \"[MOCK] Restart integration deployment\"'
+          lines << "echo kubectl rollout restart deployment/${rel} -n ${ns}"
+        }
+      }
+
+      echo 'Generated Integration Server mock commands:\n' + lines.join('\n')
+
+  }
 }
 return this
