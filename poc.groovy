@@ -703,13 +703,13 @@ def call(Map cfg = [:]) {
 
         if (pkg.action?.equalsIgnoreCase('Upgrade')) {
           lines << 'echo \"[MOCK] Helm upgrade integration server\"'
-          lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n ${ns} \\"
+          lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n namespace \\"
           lines << "  --set image.repository=${pkg.imagePath.split(':')[0]} \\"
           lines << "  --set image.tag=${(pkg.imagePath.contains(':') ? pkg.imagePath.split(':')[-1] : pkg.imageVersion)} \\"
           (pkg.configFilePath ? lines << "  --set-file app.config=${pkg.configFilePath}" : null)
         } else {
           lines << 'echo \"[MOCK] Restart integration deployment\"'
-          lines << "echo kubectl rollout restart deployment/${rel} -n ${ns}"
+          lines << "echo kubectl rollout restart deployment/${rel} -n namespace"
         }
       }
 
