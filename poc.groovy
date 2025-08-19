@@ -1,107 +1,313 @@
-def call(Map config = [:]) {
-    def githubUrl = require(config, 'githubUrl')
-    def gitRef = require(config, 'gitRef')
-    def filePath = require(config, 'filePath')
-    def command = require(config, 'command')
-    def githubCredsId = (config.githubCredsId ?: '').trim()
-    def agentLabel = (config.agentLabel ?: '').toString()
-    node(agentLabel) {
-        stage('Checkout GitHub') {
-            def checkoutDir = "${env.WORKSPACE}/gh-src"
-            dir(checkoutDir) {
-                deleteDir()
-                def scmCfg = [
-                    $class: 'GitSCM',
-                    branches: [[name: gitRef]],
-                    userRemoteConfigs: [[url: githubUrl] + (githubCredsId ? [credentialsId: githubCredsId]: [:])],
-                    extensions: [
-                        [$class: 'WipeWorkspace'],
-[$class: 'CloneOption', depth: 1, shallow: true, noTags: true, honorRefspec: true]
-                    ]
-                ]
-                checkout(scmCfg)
-                sh """#!/bin/bash -e
-          test -s '${filePath}' || { echo 'File not found or empty: ${filePath}'; exit 1; }
-        """
-            }
+pipeline {
+  agent any
+  options { timestamps() }
+
+  parameters {
+    choice(
+      name: 'ENVIRONMENT',
+      choices: ['DEV', 'QA', 'Stage 1', 'Stage 2', 'Prod'],
+      description: 'Select Deployment Environment'
+    )
+  }
+
+  environment {
+    MANIFEST_FILE = 'deployment-manifest.json'
+    TARGET_ENV_URL = ''
+  }
+
+  stage('Determine target environment URL') {
+      steps {
+        script {
+          def envUrlByName = [
+            dev    : 'https://devmerge.netways1.com',
+            qa     : 'https://qamerge.netways1.com',
+            stage1 : 'https://stage1merge.netways1.com',
+            stage2 : 'https://stage2merge.netways1.com',
+            prod   : 'https://merge.netways1.com'
+          ]
+
+          def selected = params.ENVIRONMENT as String
+          def url = envUrlByName[selected]
+          if (!url) {
+            error "No URL mapping found for ENVIRONMENT='${selected}'. Update envUrlByName."
+          }
+
+          env.TARGET_ENV_URL = url
+
+          echo "Resolved TARGET_ENV_URL: ${env.TARGET_ENV_URL}"
         }
-        stage('Run command & parse JSON') {
-            def workDir = "${env.WORKSPACE}/gh-src"
-            def fullPath = "${workDir}/${filePath}"
-            String rawOut = sh(
-                script: """
-          set -eu
-          ${command} '${fullPath}'
-        """.stripIndent(),
-                returnStdout: true
-            ).trim()
-            def parsed
-            try {
-                parsed = readJSON text: rawOut
-            } catch (e) {
-                error "Failed to parse JSON from command output.\nError: ${e}\nOutput was:\n${rawOut}"
-            }
-            writeJSON file: "${workDir}/command-result.json", json: parsed, pretty: 2
-        }
-        stage('Read deployment.manifest.json & Build Commands') {
-            def workDir = "${env.WORKSPACE}/gh-src"
-            def manifestPath = "${workDir}/${filePath}"
-            if (!fileExists(manifestPath)) {
-                error "Manifest file not found: ${manifestPath}"
-            }
-            def manifest = readJSON file: manifestPath
-            def buildCommands = {
-                dynamicsList -> (dynamicsList ?: []).collectMany {
-                    dyn -> def managedSolutionPath = dyn.managedSolution
-                    if (!managedSolutionPath) {
-                        echo "WARN: dynamics entry missing 'managedSolution' -> skipping"
-                        return []
-                    }
-                    def projects = (dyn.projects ?: dyn.projets ?: [])
-                    projects.collect {
-                        proj -> def flopPath = proj.flop
-                        if (!flopPath) {
-                            echo "WARN: project '${proj.name ?: '?'}' missing 'flop' -> skipping"
-                            return null
+      }
+    }
+
+  stages {
+    stage('Run flowon tool and get the deployment manifest') {
+      steps {
+        script {
+          // Dummy manifest you can replace with your tool’s real output
+          def manifest = [
+           {
+                "add": {
+                    "dynamics": [
+                    {
+                        "solution": "AssetManagement",
+                        "version": "1.0.0.9",
+                        "managedSolution": "/asset-module/v-99-77daf4db/crm/Asset_Management_managed.zip",
+                        "unmanagedSolution": "/asset-module/v-99-77daf4db/crm/Asset_Management_unmanaged.zip",
+                        "projects": [
+                        {
+                            "name": "Asset Management",
+                            "flop": "/asset-module/v-99-77daf4db/crm/Dispute/src/Dispute.flop",
+                            "localizedResourceDataMap": "/asset-module/v-99-77daf4db/crm/Dispute/src/localizedresources.datamap.xml",
+                            "entityDataMap": "/asset-module/v-99-77daf4db/crm/Dispute/src/dev-entity.datamap.xml",
+                            "dataSpecFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.spec.xml",
+                            "dataFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.xml"
                         }
-                        def dataFile = proj.dataFile ?: ''
-                        def entityMap = proj.entityDataMap ?: ''
-                        def localizedDataMap = proj.localizedResourceDataMap ?: ''
+                        ]
+                    }
+                    ],
+                    "api": {
+                    "internet": [
+                        {
+                        "name": "Asset Management Internet",
+                        "project": "Asset Management"
+                        }
+                    ],
+                    "intranet": [
+                        {
+                        "name": "Asset Management Intranet",
+                        "project": "Asset Management"
+                        }
+                    ]
+                    },
+                    "integration": [
+                    {
+                        "name": "MOE",
+                        "direction": "inbound"
+                    }
+                    ]
+                },
+                "update": {
+                    "dynamics": [
+                    {
+                        "solution": "LegalFiles",
+                        "version": "1.0.0.748",
+                        "managedSolution": "/legal-file-module/v-99-77daf4db/crm/LegalFiles_managed.zip",
+                        "unmanagedSolution": "/legal-file-module/v-99-77daf4db/crm/LegalFiles_unmanaged.zip",
+                        "projets": [
+                        {
+                            "name": "Dispute",
+                            "flop": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/Dispute.flop",
+                            "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/localizedresources.datamap.xml",
+                            "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/dev-entity.datamap.xml",
+                            "dataSpecFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.spec.xml",
+                            "dataFile": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/data.xml"
+                        },
+                        {
+                            "name": "Minors",
+                            "flop": "/legal-file-module/v-99-77daf4db/crm/Minors/src/Minors.flop",
+                            "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Minors/src/localizedresources.datamap.xml",
+                            "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Minors/src/dev-entity.datamap.xml"
+                        },
+                        {
+                            "name": "Bankruptcy",
+                            "flop": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/Bankruptcy.flop",
+                            "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/localizedresources.datamap.xml",
+                            "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/dev-entity.datamap.xml"
+                        },
+                        {
+                            "name": "Estate",
+                            "flop": "/legal-file-module/v-99-77daf4db/crm/Estate/src/Estate.flop",
+                            "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Estate/src/localizedresources.datamap.xml",
+                            "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Estate/src/dev-entity.datamap.xml",
+                            "dataSpecFile": "/legal-file-module/v-99-77daf4db/crm/Estate/src/data.spec.xml",
+                            "dataFile": "/legal-file-module/v-99-77daf4db/crm/Estate/src/data.xml"
+                        },
+                        {
+                            "name": "Judgment Post Action",
+                            "flop": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/Judgment_Post_Action.flop",
+                            "localizedResourceDataMap": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/localizedresources.datamap.xml",
+                            "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/dev-entity.datamap.xml"
+                        },
+                        {
+                            "name": "Marriage",
+                            "flop": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/Marriage.flop",
+                            "entityDataMap": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/entity.datamap.xml"
+                        }
+                        ]
+                    }
+                    ],
+                    "api": {
+                    "internet": [
+                        {
+                        "name": "Decisions Internet",
+                        "project": "Decisions",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Decisions/src/Decisions_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        },
+                        {
+                        "name": "Dispute Internet",
+                        "project": "Dispute",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/Dispute_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        },
+                        {
+                        "name": "Minors Internet",
+                        "project": "Minors",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Minors/src/Minors_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        },
+                        {
+                        "name": "Bankruptcy Internet",
+                        "project": "Bankruptcy",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/Bankruptcy_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        },
+                        {
+                        "name": "Estate Internet",
+                        "project": "Estate",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Estate/src/Estate_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        },
+                        {
+                        "name": "Judgment Post Action Internet",
+                        "project": "Judgment Post Action",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/Judgment_Post_Action_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        },
+                        {
+                        "name": "Marriage Internet",
+                        "project": "Marriage",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/Marriage_Internet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-internet:1.0.0"
+                        }
+                    ],
+                    "intranet": [
+                        {
+                        "name": "Decisions Intranet",
+                        "project": "Decisions",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Decisions/src/Decisions_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        },
+                        {
+                        "name": "Dispute Intranet",
+                        "project": "Dispute",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Dispute/src/Dispute_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        },
+                        {
+                        "name": "Minors Intranet",
+                        "project": "Minors",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Minors/src/Minors_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        },
+                        {
+                        "name": "Bankruptcy Intranet",
+                        "project": "Bankruptcy",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Bankruptcy/src/Bankruptcy_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        },
+                        {
+                        "name": "Estate Intranet",
+                        "project": "Estate",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Estate/src/Estate_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        },
+                        {
+                        "name": "Judgment Post Action Intranet",
+                        "project": "Judgment Post Action",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Judgment_Post_Action/src/Judgment_Post_action_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        },
+                        {
+                        "name": "Marriage Intranet",
+                        "project": "Marriage",
+                        "openApiSpecs": "/legal-file-module/v-99-77daf4db/crm/Marriage/src/Marriage_Intranet.json",
+                        "image": "docker-registry.moj.gov.ae/repository/moj-docker/just/api-intranet:1.0.0"
+                        }
+                    ]
+                    },
+                    "integration": [
+                    {
+                        "name": "ICP",
+                        "direction": "inbound"
+                    }
+                    ]
+                },
+                "remove": {
+                }
+           }
+          ]
+
+          def jsonText = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifest))
+          writeFile file: env.MANIFEST_FILE, text: jsonText
+          echo "Generated: ${env.WORKSPACE}/${env.MANIFEST_FILE}"
+          echo jsonText
+        }
+      }
+    }
+
+    stage('Extract Flowon command from this deployment manifest (solutions)') {
+        steps {
+            script {
+
+            def manifest = readJSON file: 'deployment-manifest.json'
+
+            def buildCommandsFor = { dynamicsList ->
+                (dynamicsList ?: []).collectMany { dyn ->
+                    def cmds = []
+
+                    def managed = dyn.managedSolution
+                    if (managed) {
                         def parts = []
                         parts << 'flowon-dynamics i'
-                        parts << "--connectionstring \"${env.FLOWON_CONN ?: ''}\""
-                        parts << "-p \"${flopPath}\""
-                        parts << "-s \"${managedSolutionPath}\""
-                        parts << '-oc true'
-                        if (dataFile) {
-                            parts << "-d \"${dataFile}\""
-                        }
-                                    if (entityMap) {
-                            parts << "-m \"${entityMap}\""
-                        }
-                                    if (localizedDataMap) {
-                            parts << "-m \"${localizedDataMap}\""
-                        }
-                        
-                        parts.join(' ')
-                    }.findAll {
-                        it
+                        parts << "--connectionstring \"${env.TARGET_ENV_URL}\""
+                        parts << "-s \"${managed}\""
+                        parts << "-oc true"
+                        parts << "-l Verbose"
+                        cmds << parts.join(' ')
+                    } else {
+                        echo "WARN: dynamics entry missing 'managedSolution' -> skipping solution import"
                     }
+
+                    def projects = (dyn.projects ?: dyn.projets ?: [])
+                    if (!projects) echo "WARN: no projects under solution '${dyn.solution ?: '?'}'"
+
+                    projects.each { proj ->
+                        def flop = toAzPath(proj.flop)
+                        if (!flop) {
+                        echo "WARN: project '${proj.name ?: '?'}' missing 'flop' -> skipping"
+                        return
+                        }
+
+                        def parts = []
+                        parts << 'flowon-dynamics i'
+                        parts << "--connectionstring \"${CONNECTION}\""
+                        parts << "-p \"${flop}\""
+
+                        if (proj.entityDataMap)             parts << "-m \"${proj.entityDataMap}\""
+                        if (proj.localizedResourceDataMap)  parts << "-m \"${proj.localizedResourceDataMap}\""
+                        if (proj.dataFile)                  parts << "-d \"${proj.dataFile}\""
+
+                        parts << "-l Verbose"
+                        cmds << parts.join(' ')
+                    }
+
+                    return cmds
                 }
             }
+
             def commands = []
-            if (manifest.add?.dynamics) {
-                commands += buildCommands(manifest.add.dynamics)
-            }
-            if (manifest.update?.dynamics) {
-                commands += buildCommands(manifest.update.dynamics)
-            }
+            if (manifest?.add?.dynamics)    { commands += buildCommandsFor(manifest.add.dynamics) }
+            if (manifest?.update?.dynamics) { commands += buildCommandsFor(manifest.update.dynamics) }
+
             if (commands.isEmpty()) {
                 echo 'No dynamics entries found to build commands.'
                 return
             }
+
             echo "Generated commands:\n${commands.join('\n')}"
-            // Execute them (remove this loop if you only want to print)
+
+            // To execute instead of only echoing, uncomment:
             // commands.each { cmd ->
             //   sh """
             //     set -e
@@ -109,234 +315,47 @@ def call(Map config = [:]) {
             //     ${cmd}
             //   """
             // }
-        }
-        stage('Build API Deployment Commands') {
-            def workDir = "${env.WORKSPACE}/gh-src"
-            def manifestPath = "${workDir}/${filePath}"
-            if (!fileExists(manifestPath)) {
-                error "Manifest file not found: ${manifestPath}"
-            }
-            def manifest = readJSON file: manifestPath
-            // Namespaces (override via env if you want different ones per channel)
-            def nsDefault = (env.KUBE_NAMESPACE ?: 'default')
-            def nsInternet = (env.KUBE_NS_INTERNET ?: nsDefault)
-            def nsIntranet = (env.KUBE_NS_INTRANET ?: nsDefault)
-            // Optional prefix for deployment names, e.g., "just" -> "just-decisions"
-            def depPrefix = (env.DEPLOYMENT_PREFIX ?: '').trim()
-            // Container name in the Deployment. Defaults to project.toLowerCase()
-            def resolveContainerName = {
-                String project -> (env.API_CONTAINER_NAME ?: project?.toLowerCase())
-            }
-            // Build 'kubectl set image' commands for a list of APIs under a given namespace
-            def buildApiCommands = {
-                List apiList, String namespace -> (apiList ?: []).collect {
-                    api -> def project = api.project
-                    def image = api.image
-                    if (!project || !image) {
-                        echo "Skipping API entry with missing project or image -> ${api}"
-                        return null
-                    }
-                    def depBase = project.toLowerCase()
-                    def depName = depPrefix ? "${depPrefix}-${depBase}": depBase
-                    def container = resolveContainerName(project)
-                    // Final command
-                    "kubectl -n ${namespace} set image deployment/${depName} ${container}=${image} --record"
-                }.findAll {
-                    it
-                }
-            }
-            def commands = []
-            if (manifest?.add?.api?.internet) {
-                commands += buildApiCommands(manifest?.add?.api?.internet, nsInternet)
-            }
-                  if (manifest?.add?.api?.intranet) {
-                commands += buildApiCommands(manifest?.add?.api?.intranet, nsIntranet)
-            }
-                  if (manifest?.update?.api?.internet) {
-                commands += buildApiCommands(manifest?.update?.api?.internet, nsInternet)
-            }
-                  if (manifest?.update?.api?.intranet) {
-                commands += buildApiCommands(manifest?.update?.api?.intranet, nsIntranet)
-            }
-            
-            if (commands.isEmpty()) {
-                echo 'No API deployments found in manifest'
-                return
-            }
-            echo "Generated API deployment commands:\n${commands.join('\n')}"
-            // To execute them, uncomment below. DRY_RUN=true will only print.
-            if (!(env.DRY_RUN ?: 'false').toBoolean()) {
-                // commands.each { cmd ->
-                //   sh """
-                //     set -e
-                //     echo "Executing: ${cmd}"
-                //     ${cmd}
-                //   """
-                // }
-            }
-        }
-        stage('Build API Gateway Spec Commands') {
-            def workDir = "${env.WORKSPACE}/gh-src"
-            def manifestPath = "${workDir}/${filePath}"
-            if (!fileExists(manifestPath)) {
-                error "Manifest file not found: ${manifestPath}"
-            }
-            def manifest = readJSON file: manifestPath
-            // Channels -> where to send these specs (use env to map per channel)
-            def channelInternet = (env.GW_CHANNEL_INTERNET ?: 'internet')
-            def channelIntranet = (env.GW_CHANNEL_INTRANET ?: 'intranet')
-            // Service name shaping (prefix/suffix optional)
-            def svcPrefix = (env.API_SERVICE_PREFIX ?: '').trim()
-            def svcSuffix = (env.API_SERVICE_SUFFIX ?: '').trim()
-            // Command templates (override these with your real gateway CLI)
-            // Available placeholders: ${SPEC}, ${SERVICE}, ${NAME}, ${PROJECT}, ${CHANNEL}
-            def tplInternet = (env.GW_CMD_INTERNET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
-            def tplIntranet = (env.GW_CMD_INTRANET ?: 'gatewayctl apis import --spec "${SPEC}" --service "${SERVICE}" --channel "${CHANNEL}" --publish')
-            // Where specs live (prefix path if your manifest paths are relative)
-            def specsRoot = (env.API_SPEC_ROOT ?: workDir)
-            // Helpers
-            def resolveServiceName = {
-                String project -> def base = (project ?: '').toLowerCase().replaceAll('\\s+', '-')
-                def parts = []
-                if (svcPrefix) {
-                    parts << svcPrefix
-                }
-                        parts << base
-                if (svcSuffix) {
-                    parts << svcSuffix
-                }
-                        parts.findAll {
-                    it
-                }.join('-')
-            }
-            def resolveSpecPath = {
-                String p -> if (!p) {
-                    return null
-                }
-                        // If manifest path starts with '/', treat as repo-relative under gh-src
-                if (p.startsWith('/')) {
-                    return "${workDir}${p}"
-                }
-                        // Otherwise, join with specsRoot (defaults to gh-src)
-                return "${specsRoot}/${p}"
-            }
-            def fill = {
-                String tpl, Map vars -> tpl
-                    .replace('${SPEC}', vars.SPEC ?: '')
-                    .replace('${SERVICE}', vars.SERVICE ?: '')
-                    .replace('${NAME}', vars.NAME ?: '')
-                    .replace('${PROJECT}', vars.PROJECT ?: '')
-                    .replace('${CHANNEL}', vars.CHANNEL ?: '')
-            }
-            def buildForList = {
-                List apiList, String channel, String tpl -> (apiList ?: []).collect {
-                    api -> def project = api?.project
-                    def name = api?.name ?: project
-                    def specRel = api?.openApiSpecs
-                    def specAbs = resolveSpecPath(specRel)
-                    if (!project || !specAbs) {
-                        echo "Skipping API (missing project or openApiSpecs): ${groovy.json.JsonOutput.toJson(api)}"
-                        return null
-                    }
-                    // if (!fileExists(specAbs)) {
-                    //   error "OpenAPI spec not found: ${specAbs} (from ${specRel})"
-                    // }
-                    def service = resolveServiceName(project)
-                    fill(tpl, [SPEC: specAbs, SERVICE: service, NAME: name, PROJECT: project, CHANNEL: channel])
-                }.findAll {
-                    it
-                }
-            }
-            // Collect APIs from both add & update
-            def addInternet = (manifest?.add?.api?.internet ?: [])
-            def addIntranet = (manifest?.add?.api?.intranet ?: [])
-            def updateInternet = (manifest?.update?.api?.internet ?: [])
-            def updateIntranet = (manifest?.update?.api?.intranet ?: [])
-            def commands = []
-            commands += buildForList(addInternet + updateInternet, channelInternet, tplInternet)
-            commands += buildForList(addIntranet + updateIntranet, channelIntranet, tplIntranet)
-            if (commands.isEmpty()) {
-                echo 'No API gateway imports to process (no openApiSpecs found).'
-                return
-            }
-            echo "Gateway import commands:\n${commands.join('\n')}"
-            // Execute unless DRY_RUN=true
-            if (!(env.DRY_RUN ?: 'false').toBoolean()) {
-                // commands.each { cmd ->
-                //   sh """
-                //     set -e
-                //     echo "Executing: ${cmd}"
-                //     ${cmd}
-                //   """
-                // }
-            }
-        }
-        stage('Archive JSONs & Push to GitHub') {
-            // --- config ---
-            def repoDir = "${env.WORKSPACE}/gh-src"                     // repo root
-            def sourceJsonDir = "${repoDir}/release/main"                     // where *.json live
-            def manifestFile = "${repoDir}/config/deployment.manifest.json"  // extra file to include
-            def gitCredsId = "85980cc8-2db9-4323-97e2-3c4ba4dace3b"        // Jenkins cred (Username + PAT)
-            def forcedRepo = "mustafakhodor/POC-TEST"                      // <-- force repo slug here
-            // ---------------
-def stamp = sh(script: 'date -u +%d-%m-%Y-%H:%M:%S', returnStdout: true).trim()
-            def targetDir = "${repoDir}/release/jenkins/${stamp}"
-            dir(repoDir) {
-                if (!fileExists(sourceJsonDir)) {
-                    error "Source JSON directory not found: ${sourceJsonDir}"
-                }
-                def jsons = findFiles(glob: 'release/main/*.json')
-                if (!jsons || jsons.size() == 0) {
-                    error "No .json files found under ${sourceJsonDir}"
-                }
-                sh "mkdir -p '${targetDir}'"
-                sh "cp release/main/*.json '${targetDir}/'"
-                if (fileExists(manifestFile)) {
-                    sh "cp '${manifestFile}' '${targetDir}/'"
-                } else {
-                    echo "WARN: ${manifestFile} not found; continuing without it."
-                }
-                sh '''
-      git config user.name  "CI Bot"
-      git config user.email "ci-bot@local"
-    '''
-                sh "git add 'release/jenkins/${stamp}'"
-                def hasChanges = sh(script: 'git diff --cached --quiet || echo CHANGED', returnStdout: true).trim()
-                if (hasChanges != 'CHANGED') {
-                    echo "Nothing to commit under release/${stamp}"
-                    return
-                }
-                sh "git commit -m 'chore(release-archive): add ${stamp} JSON snapshot'"
-                def branch = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
-                // Force origin to the correct repo
-                sh "git remote set-url origin 'https://github.com/${forcedRepo}.git'"
-                // Push using credentials directly in the URL
-                withCredentials([usernamePassword(
-  credentialsId: gitCredsId,
-  usernameVariable: 'GIT_USER',
-  passwordVariable: 'GIT_PASS'
-)]) {
-  sh """
-    set -e
-    # force the correct remote with PAT auth (no Groovy interpolation of secrets here)
-    git remote set-url origin https://$GIT_USER:$GIT_PASS@github.com/mustafakhodor/POC.git
-    git push origin HEAD:main
-  """
-}
-
-                echo "Archived to release/${stamp} and pushed to '${branch}' on ${forcedRepo}."
             }
         }
     }
-}
 
-@NonCPS
-private String require(Map m, String key) {
-    def v = m[key]
-    if (v == null || (v instanceof CharSequence && v.toString().trim().isEmpty())) {
-        throw new IllegalArgumentException("Missing required parameter: '${key}'")
+    stage('Extract Client Extension command from deployment manifest') {
+      steps {
+        script {
+
+        }
+      }
     }
-    return v.toString()
-}
 
-return this
+    stage('Extract APIs command from deployment manifest') {
+      steps {
+        script {
+
+        }
+      }
+    }
+
+    stage('Extract gateways command from deployment') {
+      steps {
+        script {
+
+        }
+      }
+    }
+
+    stage('Extract Integration Server command from deployment') {
+      steps {
+        script {
+
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'deployment-manifest.json', fingerprint: true
+      echo 'Pipeline finished.'
+    }
+  }
+}
