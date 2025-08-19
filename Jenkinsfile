@@ -29,7 +29,6 @@ pipeline {
         script {
          
           def result = githubFileRunner.call([ environment: params.ENVIRONMENT ])
-          echo "Helper finished for ENV='${result.env}', URL='${result.url}'"
         }
       }
     }
