@@ -1,10 +1,7 @@
-// poc.groovy
 def call(Map cfg = [:]) {
-  // Accept ENVIRONMENT from caller; fall back to top-level params if any
   def selectedEnv = (cfg.environment ?: (binding.hasVariable('params') ? params.ENVIRONMENT : null)) ?: ''
   echo "Selected ENVIRONMENT: '${selectedEnv}'"
 
-  // Resolve target URL
   def envUrlByName = [
     dev   : 'https://devmerge.netways1.com',
     qa    : 'https://qamerge.netways1.com',
@@ -13,6 +10,7 @@ def call(Map cfg = [:]) {
     prod  : 'https://merge.netways1.com'
   ]
   def key = selectedEnv.toLowerCase().replaceAll(/\s+/, '')
+  echo "${key}"
   def url = envUrlByName[key]
   if (!url) {
     error "No URL mapping found for ENVIRONMENT='${selectedEnv}'. Update envUrlByName."
@@ -20,7 +18,6 @@ def call(Map cfg = [:]) {
   env.TARGET_ENV_URL = url
   echo "Resolved TARGET_ENV_URL: ${env.TARGET_ENV_URL}"
 
-  // Stage 1: Create manifest file
   stage('Create deployment manifest file') {
     def manifestJson = '''{
       "add": {
@@ -133,10 +130,8 @@ def call(Map cfg = [:]) {
 
     writeFile file: 'deployment-manifest.json', text: manifestJson
     echo "Generated ${env.WORKSPACE}/deployment-manifest.json"
-    echo groovy.json.JsonOutput.prettyPrint(manifestJson)
   }
 
-  // Stage 2: Extract Flowon commands (solutions)
   stage('Extract Flowon commands (solutions)') {
     def manifest = readJSON file: 'deployment-manifest.json'
 

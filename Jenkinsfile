@@ -19,7 +19,7 @@ pipeline {
     stage('Load template') {
       steps {
         script {
-          githubFileRunner = load 'poc.groovy'   // DO NOT contain pipeline {} inside
+          githubFileRunner = load 'poc.groovy'  
         }
       }
     }
@@ -27,7 +27,7 @@ pipeline {
     stage('Run template pipeline') {
       steps {
         script {
-          // Pass the choice param down to the loaded script
+         
           def result = githubFileRunner.call([ environment: params.ENVIRONMENT ])
           echo "Helper finished for ENV='${result.env}', URL='${result.url}'"
         }
