@@ -597,12 +597,11 @@ def call(Map cfg = [:]) {
               def projName = proj.name ?: '(unknown-project)'
               (proj.api ?: []).each { api ->
                 apis << [
-                  solution: solName,
+                  name    : api.name,
                   project : projName,
-                  name    : api.name ?: '(unnamed-api)',
-                  specs   : api.openApiSpecs ?: '',
-                  image   : api.image ?: [:],
-                  bucket  : bucket
+                  specs   : api.openApiSpecs,
+                  image   : api.image.path,
+                  action   : api.image.action,
                 ]
               }
             }
@@ -621,7 +620,9 @@ def call(Map cfg = [:]) {
         }
 
 
-        echo "${apis}"
+        apis.each { api ->
+            echo "- Api Name: ${api.name}, Project: ${api.project}, Specs: ${api.specs}, Image: ${api.image}, Action: ${api.action}"
+        }
 
         // // Build MOCK commands for each API
         // def lines = []
