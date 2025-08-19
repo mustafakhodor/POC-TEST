@@ -490,7 +490,7 @@ def call(Map cfg = [:]) {
     // scripted pipeline: no "steps", just code here
     def manifest = readJSON file: 'deployment-manifest.json'
 
-    def conn = (env.TARGET_ENV_URL ?: '').trim()
+    def conn = (TARGET_ENV_URL ?: '').trim()
     if (!conn) {
       error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
     }
