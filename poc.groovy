@@ -621,47 +621,40 @@ def call(Map cfg = [:]) {
 
 
         apis.each { api ->
-            echo "- Api Name: ${api.name}, Project: ${api.project}, Specs: ${api.specs}, Image: ${api.image}, Action: ${api.action}"
+        echo "======================================================="
+        echo "API: ${api.name} (Project: ${api.project})"
+        echo "Specs: ${api.specs}"
+        echo "Image: ${api.image}"
+        echo "Action: ${api.action}"
+        echo "======================================================="
+
+        // === Mock Deployment Flow ===
+        if (api.action?.toLowerCase() == 'upgrade') {
+          echo "[MOCK] helm upgrade -i ${api.project.toLowerCase()} ${api.image} --namespace <namespace>"
+        } else if (api.action?.toLowerCase() == 'restart') {
+          echo "[MOCK] kubectl rollout restart deployment/${api.project.toLowerCase()} -n <namespace>"
         }
 
-        // // Build MOCK commands for each API
-        // def lines = []
-        // apis.each { a ->
-        //   def specsPath = (a.specs ?: '').replace('replaceWorkspace', '${WORKSPACE}')
-        //   def apiVar    = a.name.replaceAll(/\W+/, '_').toLowerCase()   // var-friendly
-        //   lines << "# ==================================================================="
-        //   lines << "# ${a.bucket.toUpperCase()} :: ${a.solution} / ${a.project} / ${a.name}"
-        //   lines << "# ==================================================================="
-        //   lines << "echo \"[MOCK] Check if API exists: ${a.name}\""
-        //   lines << "echo http GET \\${API_GATEWAY_URL}/rest/apigateway/apis --auth \\${CRED_ID}"
-        //   lines << ""
-        //   lines << "echo \"[MOCK] Create API if missing with specs: ${specsPath}\""
-        //   lines << "echo curl -X POST \\${API_GATEWAY_URL}/rest/apigateway/apis \\"
-        //   lines << "  -H \"Accept: application/json\" -H \"Content-Type: multipart/form-data\" \\"
-        //   lines << "  -u \\${API_USER}:\\${API_PASS} \\"
-        //   lines << "  -F \"file=@${specsPath}\" -F \"apiName=${a.name}\" -F \"type=\\${API_TYPE}\" -F \"apiVersion=1.0\""
-        //   lines << ""
-        //   lines << "echo \"[MOCK] Deactivate API before update: \\${${apiVar}_ID}\""
-        //   lines << "echo curl -X PUT \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID}/deactivate -u \\${API_USER}:\\${API_PASS}"
-        //   lines << ""
-        //   lines << "echo \"[MOCK] Update API: \\${${apiVar}_ID} with specs: ${specsPath}\""
-        //   lines << "echo curl -X PUT \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID}?overwriteTags=true \\"
-        //   lines << "  -H \"Accept: application/json\" -H \"Content-Type: multipart/form-data\" \\"
-        //   lines << "  -u \\${API_USER}:\\${API_PASS} \\"
-        //   lines << "  -F \"file=@${specsPath}\" -F \"apiName=${a.name}\" -F \"type=\\${API_TYPE}\" -F \"apiVersion=1.0\""
-        //   lines << ""
-        //   lines << "echo \"[MOCK] Activate API: \\${${apiVar}_ID}\""
-        //   lines << "echo curl -X PUT \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID}/activate -u \\${API_USER}:\\${API_PASS}"
-        //   lines << ""
-        //   lines << "echo \"[MOCK] Verify API: \\${${apiVar}_ID}\""
-        //   lines << "echo http GET \\${API_GATEWAY_URL}/rest/apigateway/apis/\\${${apiVar}_ID} --auth \\${CRED_ID}"
-        //   lines << ""
-        // }
+        echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
 
-        // // Print to console
-        // echo "Generated API mock commands:\n" + lines.join('\n')
+        echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
 
+        echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+
+        echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+
+        echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
+
+        echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
       }
+
+       // deploy to k8s ( if action upgrade helm upgrade else restart pod)
+       //  check if api exist
+       // if exist and active then deactivate it then update
+       // else create it
+       // activate api
+       // verify api
+    }
   
   
 
