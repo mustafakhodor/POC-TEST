@@ -557,34 +557,48 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract Client Extension command from manifest') {
-    def manifest = readJSON file: 'deployment-manifest.json'
+  def manifest = readJSON file: 'deployment-manifest.json'
 
-    def clientExts = []
-    clientExts += manifest?.liferay?.clientExtensions?.add ?: []
-    clientExts += manifest?.liferay?.clientExtensions?.update ?: []
+  // collect add + update
+  def clientExts = []
+  clientExts += manifest?.liferay?.clientExtensions?.add    ?: []
+  clientExts += manifest?.liferay?.clientExtensions?.update ?: []
 
-    if (!clientExts) {
-      echo 'No client extensions found in manifest.'
+  if (!clientExts) {
+    echo 'No client extensions found in manifest.'
+    return
+  }
+
+  // hard-code or pass as params/variables
+  def password    = "yourPassword"
+  def liferayUser = "yourUser"
+  def ip          = "1.2.3.4"
+
+  def ws = pwd()
+  def commands = []
+
+  clientExts.each { ext ->
+    def destPath = ext.filePath?.trim()
+    if (!destPath) {
+      echo "WARN: client extension '${ext.name ?: '?'}' missing filePath -> skipping"
       return
     }
 
-    def commands = []
-    clientExts.each { ext ->
-      def destPath = ext.filePath   // from manifest
-      def cmd = """sshpass -p password scp -o StrictHostKeyChecking=no -r \\
-                 ${pwd()}/artifacts/clientextensions/*.zip \\
-                 liferayUser@ip:${destPath}"""
-      commands << cmd.stripIndent()
-    }
-
-    if (commands.isEmpty()) {
-      echo 'No client extension commands generated.'
-  } else {
-      echo "Generated Client Extension commands:\n${commands.join('\n')}"
-    // To actually run them:
-    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
-    }
+    def cmd = """sshpass -p '${password}' scp -o StrictHostKeyChecking=no -r \
+${ws}/artifacts/clientextensions/*.zip \
+${liferayUser}@${ip}:${destPath}"""
+    commands << cmd
   }
+
+  if (commands.isEmpty()) {
+    echo 'No client extension commands generated.'
+  } else {
+    echo "Generated Client Extension commands:\n${commands.join('\n')}"
+    // To execute instead of just printing:
+    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
+  }
+}
+
 
   stage('Extract APIs command from manifest') { echo 'TODO' }
   stage('Extract gateways command from manifest') { echo 'TODO' }
