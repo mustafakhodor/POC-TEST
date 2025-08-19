@@ -1,30 +1,23 @@
 pipeline {
   agent any
 
+  parameters {
+    choice(
+      name: 'ENVIRONMENT',
+      choices: ['DEV', 'QA', 'Stage 1', 'Stage 2', 'Prod'],
+      description: 'Select Deployment Environment'
+    )
+  }
+
   stages {
-    stage('Load template') {
+    stage('Run Template Pipeline') {
       steps {
         script {
-          def githubFileRunner = load 'poc.groovy'  
-          env.GFR_LOADED = 'true' 
-        }
-      }
-    }
+          // Load the other file
+          def template = load("${env.WORKSPACE}/poc.groovy")
 
-    stage('Run template pipeline') {
-      steps {
-        script {
-          def githubFileRunner = load 'poc.groovy'
-
-          def result = githubFileRunner.call([
-            agentLabel   : '',   
-            githubCredsId: '',
-            githubUrl    : 'https://github.com/mustafakhodor/POC.git',
-            gitRef       : 'main',
-            filePath     : 'config/deployment.manifest.json',
-            command      : 'cat'
-          ])
-
+          // Call its entry method and pass the parameter
+          template.runPipeline(params.ENVIRONMENT)
         }
       }
     }
