@@ -1,14 +1,14 @@
 def call(Map cfg = [:]) {
   stage('Determine target environment URL') {
     def envUrlByName = [
-    dev   : 'https://devmerge.netways1.com',
-    qa    : 'https://qamerge.netways1.com',
-    stage1: 'https://stage1merge.netways1.com',
-    stage2: 'https://stage2merge.netways1.com',
-    prod  : 'https://merge.netways1.com'
+    "dev"   : 'https://devmerge.netways1.com',
+    "qa"    : 'https://qamerge.netways1.com',
+    "stage1": 'https://stage1merge.netways1.com',
+    "stage2": 'https://stage2merge.netways1.com',
+    "prod"  : 'https://merge.netways1.com'
   ]
 
-    def key = params.ENVIRONMENT.toLowerCase().replaceAll(/\s+/, '')
+    def key = params.ENVIRONMENT.toLowerCase().replaceAll(/\s+/, '').trim()
     echo "Normalized key: '${key}'"
 
     def url = envUrlByName[key]
@@ -199,6 +199,6 @@ def call(Map cfg = [:]) {
   stage('Extract Integration Server command from manifest') { echo 'TODO' }
 
   // Return anything you want to the caller
-  return [env: selectedEnv, url: env.TARGET_ENV_URL]
+  return [env: params.ENVIRONMENT, url: env.TARGET_ENV_URL]
 }
 return this
