@@ -41,20 +41,25 @@ def call(Map cfg = [:]) {
    *  - Map (single object) -> [that map]
    *  - Map.Entry -> recurse on value
    */
-  def asList = { obj ->
-    if (obj == null)         return []
-    if (obj instanceof List) return obj
-    if (obj instanceof Map.Entry) return asList(obj.value)
-    if (obj instanceof Map) {
-      def m = (Map)obj
+def asList = { obj ->
+  if (obj == null)         return []
+  if (obj instanceof List) return obj
+  if (obj instanceof Map.Entry) return asList(obj.value)
+  if (obj instanceof Map) {
+    def m = (Map)obj
+    // Treat container shapes as containers even if lists are empty
+    def isContainer = m.containsKey('add') || m.containsKey('update') || m.containsKey('delete')
+    if (isContainer) {
       def acc = []
       if (m.add    instanceof List) acc.addAll((List)m.add)
       if (m.update instanceof List) acc.addAll((List)m.update)
-      if (!acc.isEmpty()) return acc
-      return [m]
+      return acc  // may be []
     }
-    return []
+    // Plain single object
+    return [m]
   }
+  return []
+}
 
   /** Return first non-null/real value found among keys */
   def firstNonNull = { Map m, List<String> keys ->
