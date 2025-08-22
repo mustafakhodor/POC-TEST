@@ -3,7 +3,6 @@ import groovy.transform.Field
 @Field String TARGET_ENV_URL = null
 
 def call(Map cfg = [:]) {
-
   // =========================
   // Reusable helpers (one file)
   // =========================
@@ -41,25 +40,25 @@ def call(Map cfg = [:]) {
    *  - Map (single object) -> [that map]
    *  - Map.Entry -> recurse on value
    */
-def asList = { obj ->
-  if (obj == null)         return []
-  if (obj instanceof List) return obj
-  if (obj instanceof Map.Entry) return asList(obj.value)
-  if (obj instanceof Map) {
-    def m = (Map)obj
-    // Treat container shapes as containers even if lists are empty
-    def isContainer = m.containsKey('add') || m.containsKey('update') || m.containsKey('delete')
-    if (isContainer) {
-      def acc = []
-      if (m.add    instanceof List) acc.addAll((List)m.add)
-      if (m.update instanceof List) acc.addAll((List)m.update)
-      return acc  // may be []
+  def asList = { obj ->
+    if (obj == null)         return []
+    if (obj instanceof List) return obj
+    if (obj instanceof Map.Entry) return asList(obj.value)
+    if (obj instanceof Map) {
+      def m = (Map)obj
+      // Treat container shapes as containers even if lists are empty
+      def isContainer = m.containsKey('add') || m.containsKey('update') || m.containsKey('delete')
+      if (isContainer) {
+        def acc = []
+        if (m.add    instanceof List) acc.addAll((List)m.add)
+        if (m.update instanceof List) acc.addAll((List)m.update)
+        return acc  // may be []
+      }
+      // Plain single object
+      return [m]
     }
-    // Plain single object
-    return [m]
+    return []
   }
-  return []
-}
 
   /** Return first non-null/real value found among keys */
   def firstNonNull = { Map m, List<String> keys ->
@@ -93,7 +92,7 @@ def asList = { obj ->
   /** Build a release name with prefix and slug */
   def mkRelease = { baseName, fallbackKey, prefix ->
     def base = isRealVal(baseName) ? baseName : fallbackKey
-    (prefix + "-" + base.replaceAll(/\W+/, '-').toLowerCase())
+    (prefix + '-' + base.replaceAll(/\W+/, '-').toLowerCase())
   }
 
   // =========================
@@ -360,7 +359,7 @@ def asList = { obj ->
       echo 'No dynamics solution/project commands generated.'
     } else {
       echo "Generated commands:\n${commands.join('\n')}"
-      // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
+    // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
     }
   }
 
@@ -390,43 +389,43 @@ def asList = { obj ->
       echo 'No client extension commands generated.'
     } else {
       echo "Generated Client Extension commands:\n${commands.join('\n')}"
-      // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
+    // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
     }
   }
 
   stage('Extract APIs command from manifest') {
-  def manifest = readJSON file: 'deployment-manifest.json'
+    def manifest = readJSON file: 'deployment-manifest.json'
 
-  def apis = []
+    def apis = []
 
-  def collectApis = { Object solutionsNode, String bucket ->
-    def sols = asList(solutionsNode)
-    sols.each { solAny ->
-      def sol = asMap(solAny)
-      def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown-solution)'
+    def collectApis = { Object solutionsNode, String bucket ->
+      def sols = asList(solutionsNode)
+      sols.each { solAny ->
+        def sol = asMap(solAny)
+        def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown-solution)'
 
-      def projects = asList(sol.projects ?: sol.projets)
-      projects.each { projAny ->
-        def proj = asMap(projAny)
-        def projName = normalize(proj.get('name')) ?: '(unknown-project)'
+        def projects = asList(sol.projects ?: sol.projets)
+        projects.each { projAny ->
+          def proj = asMap(projAny)
+          def projName = normalize(proj.get('name')) ?: '(unknown-project)'
 
-        // If no apis/api node, skip this project entirely
-        def apisNode = proj.apis ?: proj.api
-        if (apisNode == null) return
+          // If no apis/api node, skip this project entirely
+          def apisNode = proj.apis ?: proj.api
+          if (apisNode == null) return
 
-        def apiList = asList(apisNode)
-        if (!apiList) return // nothing to do for this project
+          def apiList = asList(apisNode)
+          if (!apiList) return // nothing to do for this project
 
-        apiList.each { apiAny ->
-          def api = asMap(apiAny)
-          def apiName   = firstNonNull(api, ['name', 'apiName']) ?: '(unknown-api)'
-          def specsPath = firstNonNull(api, ['openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'])
+          apiList.each { apiAny ->
+            def api = asMap(apiAny)
+            def apiName   = firstNonNull(api, ['name', 'apiName']) ?: '(unknown-api)'
+            def specsPath = firstNonNull(api, ['openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'])
 
-          def imgMap    = asMap(api.image ?: [:])
-          def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name'])
-          def actionVal = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
+            def imgMap    = asMap(api.image ?: [:])
+            def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name'])
+            def actionVal = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
 
-          apis << [
+            apis << [
             solution: solName,
             project : projName,
             name    : apiName,
@@ -434,55 +433,57 @@ def asList = { obj ->
             image   : imagePath,
             action  : actionVal
           ]
+          }
         }
       }
     }
-  }
 
-  def solutionsNode = manifest?.dynamics?.solutions
-  if (solutionsNode) {
-    collectApis(solutionsNode?.add,    'add')
-    collectApis(solutionsNode?.update, 'update')
-  }
+    def solutionsNode = manifest?.dynamics?.solutions
+    if (solutionsNode) {
+      collectApis(solutionsNode?.add,    'add')
+      collectApis(solutionsNode?.update, 'update')
+    }
 
-  // If nothing collected, just exit the stage silently
-  if (apis.isEmpty()) return
+    // If nothing collected, just exit the stage silently
+    if (apis.isEmpty()) {
+      echo "No Apis to deploy" 
+    return
+    }
 
-  apis.each { api ->
-    echo '======================================================='
-    echo "Solution: ${api.solution}"
-    echo "Project : ${api.project}"
-    echo "API     : ${api.name}"
-    echo "Specs   : ${api.specs ?: '(none)'}"
-    echo "Image   : ${api.image ?: '(none)'}"
-    echo "Action  : ${api.action ?: '(none)'}"
-    echo '======================================================='
+    apis.each { api ->
+      echo '======================================================='
+      echo "Solution: ${api.solution}"
+      echo "Project : ${api.project}"
+      echo "API     : ${api.name}"
+      echo "Specs   : ${api.specs ?: '(none)'}"
+      echo "Image   : ${api.image ?: '(none)'}"
+      echo "Action  : ${api.action ?: '(none)'}"
+      echo '======================================================='
 
-    if (isRealVal(api.action) && isRealVal(api.image)) {
-      def projKey = api.project.toLowerCase().replaceAll(/\s+/, '-')
-      switch (api.action.toLowerCase()) {
-        case ['upgrade','update','install']:
-          echo "[MOCK] helm upgrade -i ${projKey} ${api.image} --namespace <namespace>"
-          break
+      if (isRealVal(api.action) && isRealVal(api.image)) {
+        def projKey = api.project.toLowerCase().replaceAll(/\s+/, '-')
+        switch (api.action.toLowerCase()) {
+        case ['upgrade', 'update', 'install']:
+            echo "[MOCK] helm upgrade -i ${projKey} ${api.image} --namespace <namespace>"
+            break
         case 'restart':
-          echo "[MOCK] kubectl rollout restart deployment/${projKey} -n <namespace>"
-          break
+            echo "[MOCK] kubectl rollout restart deployment/${projKey} -n <namespace>"
+            break
         default:
           echo "[MOCK] (unknown action '${api.action}') — skipping k8s step"
+        }
+      }
+
+      if (isRealVal(api.name) && isRealVal(api.specs)) {
+        echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
+        echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
+        echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+        echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+        echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
+        echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
       }
     }
-
-    if (isRealVal(api.name) && isRealVal(api.specs)) {
-      echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
-      echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
-      echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-      echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-      echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
-      echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
-    }
   }
-}
-
 
   stage('Extract Integration Server command from manifest') {
     def manifest = readJSON file: 'deployment-manifest.json'
@@ -541,7 +542,7 @@ def asList = { obj ->
       }
 
       def act = (pkg.action ?: '').toLowerCase()
-      if (['upgrade','update','install'].contains(act) && isRealVal(repo) && isRealVal(tag)) {
+      if (['upgrade', 'update', 'install'].contains(act) && isRealVal(repo) && isRealVal(tag)) {
         lines << "echo '[MOCK] Helm upgrade integration server'"
         lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n <namespace> \\"
         lines << "  --set image.repository=${repo} \\"
@@ -595,7 +596,7 @@ def asList = { obj ->
         lines << "echo '[INFO] Missing action for ${name}; expected Start/Install/Update/Upgrade/Restart/Stop. Skipping.'"
       } else {
         switch (action.toLowerCase()) {
-          case ['start','install','update','upgrade']:
+          case ['start', 'install', 'update', 'upgrade']:
             if (isRealVal(repo) && isRealVal(tag)) {
               lines << "echo '[MOCK] Helm upgrade ${n.key} identity service'"
               lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n <namespace> \\"
@@ -622,7 +623,6 @@ def asList = { obj ->
 
     echo 'Generated Identity mock commands:\n' + lines.join('\n')
   }
-
 } // end call
 
 return this
