@@ -235,74 +235,102 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract Flowon commands (solutions)') {
-    def manifest = readJSON file: 'deployment-manifest.json'
+  def manifest = readJSON file: 'deployment-manifest.json'
 
-    def conn = (TARGET_ENV_URL ?: '').trim()
-    if (!conn) {
-      error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
-    }
-
-    def buildCommandsForSolutions = { List solutions, String bucketLabel ->
-      def cmds = []
-      (solutions ?: []).each { sol ->
-        def solName = sol.solution ?: '(unknown)'
-        echo "Processing ${bucketLabel} solution: ${solName}"
-
-        if (sol.managedSolution) {
-          def importParts = []
-          importParts << 'flowon-dynamics i'
-          importParts << "--connectionstring \"${conn}\""
-          importParts << "-s \"${sol.managedSolution}\""
-          importParts << '-oc true'
-          importParts << '-l Verbose'
-          cmds << importParts.join(' ')
-        } else {
-          echo "WARN: solution '${solName}' missing 'managedSolution' -> skipping solution import"
-        }
-
-        def projects = (sol.projects ?: sol.projets ?: [])
-        if (!projects) {
-          echo "WARN: solution '${solName}' has no 'projects' -> nothing to import at project level"
-        }
-
-        projects.each { proj ->
-          def flopPath = proj.flop
-          if (!flopPath) {
-            echo "WARN: project '${proj.name ?: '?'}' missing 'flop' -> skipping"
-            return
-          }
-
-          def p = []
-          p << 'flowon-dynamics i'
-          p << "--connectionstring \"${conn}\""
-          p << "-p \"${flopPath}\""
-          if (proj.entityDataMap)            p << "-m \"${proj.entityDataMap}\""
-          if (proj.localizedResourceDataMap) p << "-m \"${proj.localizedResourceDataMap}\""
-          if (proj.dataFile)                 p << "-d \"${proj.dataFile}\""
-          p << '-l Verbose'
-          cmds << p.join(' ')
-        }
-      }
-      return cmds
-    }
-
-    def commands = []
-    def solutionsNode = manifest?.dynamics?.solutions
-    if (!solutionsNode) {
-      echo 'No dynamics.solutions section found in manifest.'
-    } else {
-      commands += buildCommandsForSolutions(solutionsNode.add    as List ?: [], 'add')
-      commands += buildCommandsForSolutions(solutionsNode.update as List ?: [], 'update')
-    }
-
-    if (commands.isEmpty()) {
-      echo 'No dynamics solution/project commands generated.'
-    } else {
-      echo "Generated commands:\n${commands.join('\n')}"
-    // If you want to execute them:
-    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
-    }
+  def conn = (TARGET_ENV_URL ?: '').trim()
+  if (!conn) {
+    error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
   }
+
+  // Helpers
+  def asList = { obj ->
+    if (obj == null)                    return []
+    if (obj instanceof List)            return obj
+    if (obj instanceof Map) { // projects { add/update/delete }
+      def acc = []
+      ['add','update'].each { k -> if (obj[k] instanceof List) acc.addAll(obj[k]) }
+      return acc
+    }
+    return []
+  }
+
+  // Safe getter that tries both new and legacy field names
+  def firstNonNull = { Map m, List<String> keys ->
+    for (k in keys) {
+      if (m?.containsKey(k) && m[k]) return m[k]
+    }
+    return null
+  }
+
+  def buildCommandsForSolutions = { List sols, String bucketLabel ->
+    def cmds = []
+    (sols ?: []).each { Map sol ->
+      def solName = firstNonNull(sol, ['name','solution']) ?: '(unknown)'
+      echo "Processing ${bucketLabel} solution: ${solName}"
+
+      // Solution import (prefer managedSolutionFilePath; fall back to managedSolution)
+      def managedZip = firstNonNull(sol, ['managedSolutionFilePath','managedSolution'])
+      if (managedZip) {
+        def parts = []
+        parts << 'flowon-dynamics i'
+        parts << "--connectionstring \"${conn}\""
+        parts << "-s \"${managedZip}\""       // managed solution zip
+        parts << '-oc true'
+        parts << '-l Verbose'
+        cmds << parts.join(' ')
+      } else {
+        echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
+      }
+
+      // Projects block (may be {add/update/delete} or a flat list)
+      def projects = asList(sol.projects ?: sol.projets)
+      if (!projects) {
+        echo "INFO: solution '${solName}' has no projects to import"
+      }
+
+      projects.each { Map proj ->
+        def flopPath = firstNonNull(proj, ['flopFilePath','flop'])
+        if (!flopPath) {
+          echo "WARN: project '${(proj.name ?: '?')}' missing 'flopFilePath' -> skipping"
+          return
+        }
+        def entityMap   = firstNonNull(proj, ['entityDataMapFilePath','entityDataMap'])
+        def locResMap   = firstNonNull(proj, ['localizedResourceDataMapFilePath','localizedResourceDataMap'])
+        def dataFile    = firstNonNull(proj, ['dataFilePath','dataFile'])
+
+        def p = []
+        p << 'flowon-dynamics i'
+        p << "--connectionstring \"${conn}\""
+        p << "-p \"${flopPath}\""
+        if (entityMap) p << "-m \"${entityMap}\""
+        if (locResMap) p << "-m \"${locResMap}\""
+        if (dataFile)  p << "-d \"${dataFile}\""
+        p << '-l Verbose'
+        cmds << p.join(' ')
+      }
+    }
+    return cmds
+  }
+
+  def commands = []
+  def solutionsNode = manifest?.dynamics?.solutions
+  if (!solutionsNode) {
+    echo 'No dynamics.solutions section found in manifest.'
+  } else {
+    commands += buildCommandsForSolutions(asList(solutionsNode.add),    'add')
+    commands += buildCommandsForSolutions(asList(solutionsNode.update), 'update')
+    // we ignore deletes for command generation
+  }
+
+  if (commands.isEmpty()) {
+    echo 'No dynamics solution/project commands generated.'
+  } else {
+    echo "Generated commands:\n${commands.join('\n')}"
+    // To execute:
+    // commands.each { c -> sh "set -e; echo Executing: ${c}; ${c}" }
+  }
+}
+
 
   stage('Extract Client Extension command from manifest') {
     def manifest = readJSON file: 'deployment-manifest.json'
