@@ -235,143 +235,139 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract Flowon commands (solutions)') {
-  def manifest = readJSON file: 'deployment-manifest.json'
+          def manifest = readJSON file: 'deployment-manifest.json'
 
-  def conn = (TARGET_ENV_URL ?: '').trim()
-  if (!conn) {
-    error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
+          def conn = (TARGET_ENV_URL ?: '').trim()
+          if (!conn) {
+            error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
+          }
+
+          def stripQuotes = { s ->
+            if (s == null) return null
+            def t = s.toString().trim()
+            if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+              t = t.substring(1, t.length() - 1).trim()
+            }
+            return t
+          }
+
+          def isRealVal = { v ->
+            if (v == null) return false
+            def t = stripQuotes(v)
+            if (t == null) return false
+            t = t.trim()
+            if (t.isEmpty()) return false
+            if (t.equalsIgnoreCase('null')) return false
+            if (t == '""' || t == "''") return false
+            return true
+          }
+
+          def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
+
+          def asMap = { obj ->
+            if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
+            return (obj instanceof Map) ? obj : [:]
+          }
+
+          def asList = { obj ->
+            if (obj == null)         return []
+            if (obj instanceof List) return obj
+            if (obj instanceof Map) {
+              def acc = []
+              if (obj.add instanceof List || obj.update instanceof List) {
+                if (obj.add    instanceof List) acc.addAll(obj.add)
+                if (obj.update instanceof List) acc.addAll(obj.update)
+                return acc
+              }
+              return [obj]
+            }
+            if (obj instanceof Map.Entry) {
+              def v = obj.value
+              if (v instanceof List) return v
+              if (v instanceof Map)  return [v]
+            }
+            return []
+          }
+
+          def firstNonNull = { Map m, List<String> keys ->
+            for (k in keys) {
+              if (m?.containsKey(k)) {
+                def v = normalize(m[k])
+                if (v != null) return v
+              }
+            }
+            return null
+          }
+
+          def buildCommandsForSolutions = { List sols, String bucketLabel ->
+            def cmds = []
+            (sols ?: []).each { solAny ->
+              def sol = asMap(solAny)
+              def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown)'
+              echo "Processing ${bucketLabel} solution: ${solName}"
+
+              def managedZip = firstNonNull(sol, ['managedSolutionFilePath', 'managedSolution'])
+              if (managedZip) {
+                def parts = []
+                parts << 'flowon-dynamics i'
+                parts << "--connectionstring \"${conn}\""
+                parts << "-s \"${managedZip}\""
+                parts << '-oc true'
+                parts << '-l Verbose'
+                cmds << parts.join(' ')
+            } else {
+                echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
+              }
+
+              def projects = asList(sol.projects ?: sol.projets)
+              if (!projects) {
+                echo "INFO: solution '${solName}' has no projects to import"
+              }
+
+              projects.each { projAny ->
+                def proj = asMap(projAny)
+
+                def flopPath  = firstNonNull(proj, ['flopFilePath', 'flop'])
+                def entityMap = firstNonNull(proj, ['entityDataMapFilePath', 'entityDataMap'])
+                def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath', 'localizedResourceDataMap'])
+                def dataFile  = firstNonNull(proj, ['dataFilePath', 'dataFile'])
+
+                if (!flopPath) {
+                  def pname = normalize(proj.name) ?: '?'
+                  echo "WARN: project '${pname}' missing 'flopFilePath' -> skipping"
+                  return
+                }
+
+                def p = []
+                p << 'flowon-dynamics i'
+                p << "--connectionstring \"${conn}\""
+                p << "-p \"${flopPath}\""
+                if (isRealVal(entityMap)) p << "-m \"${entityMap}\""
+                if (isRealVal(locResMap)) p << "-m \"${locResMap}\""
+                if (isRealVal(dataFile))  p << "-d \"${dataFile}\""
+                p << '-l Verbose'
+                cmds << p.join(' ')
+              }
+            }
+            return cmds
+          }
+
+          def commands = []
+          def solutionsNode = manifest?.dynamics?.solutions
+          if (!solutionsNode) {
+            echo 'No dynamics.solutions section found in manifest.'
+        } else {
+            commands += buildCommandsForSolutions(asList(solutionsNode?.add),    'add')
+            commands += buildCommandsForSolutions(asList(solutionsNode?.update), 'update')
+          }
+
+          if (commands.isEmpty()) {
+            echo 'No dynamics solution/project commands generated.'
+        } else {
+            echo "Generated commands:\n${commands.join('\n')}"
+          // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
+          }
   }
-
-  // ---- Helpers ----
-  def stripQuotes = { s ->
-    if (s == null) return null
-    def t = s.toString().trim()
-    // remove a single pair of matching leading/trailing quotes if present
-    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-      t = t.substring(1, t.length()-1).trim()
-    }
-    return t
-  }
-
-  def isRealVal = { v ->
-    if (v == null) return false
-    def t = stripQuotes(v)
-    if (t == null) return false
-    t = t.trim()
-    if (t.isEmpty()) return false
-    if (t.equalsIgnoreCase('null')) return false
-    if (t == '""' || t == "''") return false
-    return true
-  }
-
-  def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
-
-  def asMap = { obj ->
-    if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
-    return (obj instanceof Map) ? obj : [:]
-  }
-
-  def asList = { obj ->
-    if (obj == null)         return []
-    if (obj instanceof List) return obj
-    if (obj instanceof Map) {
-      def acc = []
-      if (obj.add instanceof List || obj.update instanceof List) {
-        if (obj.add    instanceof List) acc.addAll(obj.add)
-        if (obj.update instanceof List) acc.addAll(obj.update)
-        return acc
-      }
-      return [obj]
-    }
-    if (obj instanceof Map.Entry) {
-      def v = obj.value
-      if (v instanceof List) return v
-      if (v instanceof Map)  return [v]
-    }
-    return []
-  }
-
-  def firstNonNull = { Map m, List<String> keys ->
-    for (k in keys) {
-      if (m?.containsKey(k)) {
-        def v = normalize(m[k])
-        if (v != null) return v
-      }
-    }
-    return null
-  }
-
-  def buildCommandsForSolutions = { List sols, String bucketLabel ->
-    def cmds = []
-    (sols ?: []).each { solAny ->
-      def sol = asMap(solAny)
-      def solName = firstNonNull(sol, ['name','solution']) ?: '(unknown)'
-      echo "Processing ${bucketLabel} solution: ${solName}"
-
-      def managedZip = firstNonNull(sol, ['managedSolutionFilePath','managedSolution'])
-      if (managedZip) {
-        def parts = []
-        parts << 'flowon-dynamics i'
-        parts << "--connectionstring \"${conn}\""
-        parts << "-s \"${managedZip}\""
-        parts << '-oc true'
-        parts << '-l Verbose'
-        cmds << parts.join(' ')
-      } else {
-        echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
-      }
-
-      def projects = asList(sol.projects ?: sol.projets)
-      if (!projects) {
-        echo "INFO: solution '${solName}' has no projects to import"
-      }
-
-      projects.each { projAny ->
-        def proj = asMap(projAny)
-
-        def flopPath  = firstNonNull(proj, ['flopFilePath','flop'])
-        def entityMap = firstNonNull(proj, ['entityDataMapFilePath','entityDataMap'])
-        def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath','localizedResourceDataMap'])
-        def dataFile  = firstNonNull(proj, ['dataFilePath','dataFile'])
-
-        if (!flopPath) {
-          def pname = normalize(proj.name) ?: '?'
-          echo "WARN: project '${pname}' missing 'flopFilePath' -> skipping"
-          return
-        }
-
-        def p = []
-        p << 'flowon-dynamics i'
-        p << "--connectionstring \"${conn}\""
-        p << "-p \"${flopPath}\""
-        if (isRealVal(entityMap)) p << "-m \"${entityMap}\""
-        if (isRealVal(locResMap)) p << "-m \"${locResMap}\""
-        if (isRealVal(dataFile))  p << "-d \"${dataFile}\""
-        p << '-l Verbose'
-        cmds << p.join(' ')
-      }
-    }
-    return cmds
-  }
-
-  def commands = []
-  def solutionsNode = manifest?.dynamics?.solutions
-  if (!solutionsNode) {
-    echo 'No dynamics.solutions section found in manifest.'
-  } else {
-    commands += buildCommandsForSolutions(asList(solutionsNode?.add),    'add')
-    commands += buildCommandsForSolutions(asList(solutionsNode?.update), 'update')
-  }
-
-  if (commands.isEmpty()) {
-    echo 'No dynamics solution/project commands generated.'
-  } else {
-    echo "Generated commands:\n${commands.join('\n')}"
-    // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
-  }
-}
-
-
 
   stage('Extract Client Extension command from manifest') {
     def manifest = readJSON file: 'deployment-manifest.json'
@@ -388,10 +384,10 @@ def call(Map cfg = [:]) {
     def commands = []
     clientExts.each { ext ->
       def destPath = ext.filePath
-      def cmd = """sshpass -p password scp -o StrictHostKeyChecking=no -r \\
-                 ${pwd()}/artifacts/clientextensions/*.zip \\
-                 liferayUser@ip:${destPath}"""
-      commands << cmd.stripIndent()
+      // def cmd = """sshpass -p password scp -o StrictHostKeyChecking=no -r \\
+      //            ${pwd()}/artifacts/clientextensions/*.zip \\
+      //            liferayUser@ip:${destPath}"""
+      commands << destPath
     }
 
     if (commands.isEmpty()) {
@@ -404,73 +400,160 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract APIs command from manifest') {
-    def manifest = readJSON file: 'deployment-manifest.json'
+  // Read manifest
+  def manifest = readJSON file: 'deployment-manifest.json'
 
-    def apis = []
-    def collectApis = { List solutions, String bucket ->
-      (solutions ?: []).each { sol ->
-        def solName = sol.solution ?: '(unknown-solution)'
-        (sol.projects ?: sol.projets ?: []).each { proj ->
-          def projName = proj.name ?: '(unknown-project)'
-          (proj.api ?: []).each { api ->
-            apis << [
-              name    : api.name,
-              project : projName,
-              specs   : api.openApiSpecs,
-              image   : api.image.path,
-              action   : api.image.action,
-            ]
-          }
+  // ---------- helpers ----------
+  def stripQuotes = { s ->
+    if (s == null) return null
+    def t = s.toString().trim()
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      t = t.substring(1, t.length()-1).trim()
+    }
+    return t
+  }
+  def isRealVal = { v ->
+    if (v == null) return false
+    def t = stripQuotes(v)
+    if (t == null) return false
+    t = t.trim()
+    if (t.isEmpty()) return false
+    if (t.equalsIgnoreCase('null')) return false
+    if (t == '""' || t == "''") return false
+    return true
+  }
+  def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
+
+  def asMap = { obj ->
+    if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
+    return (obj instanceof Map) ? obj : [:]
+  }
+
+  // Turns many shapes into a flat list:
+  // - null -> []
+  // - List -> as is
+  // - Map with {add/update/delete} arrays -> concat add+update
+  // - Map (single object) -> [that map]
+  // - Map.Entry -> recurse on value
+  def asList = { obj ->
+    if (obj == null)         return []
+    if (obj instanceof List) return obj
+    if (obj instanceof Map.Entry) return asList(obj.value)
+    if (obj instanceof Map) {
+      def acc = []
+      if (obj.add instanceof List || obj.update instanceof List) {
+        if (obj.add    instanceof List) acc.addAll(obj.add)
+        if (obj.update instanceof List) acc.addAll(obj.update)
+        return acc
+      }
+      return [obj]
+    }
+    return []
+  }
+
+  def firstNonNull = { Map m, List<String> keys ->
+    for (k in keys) {
+      if (m?.containsKey(k)) {
+        def v = normalize(m[k])
+        if (v != null) return v
+      }
+    }
+    return null
+  }
+
+  // ---------- collect APIs ----------
+  def apis = []
+  def collectApis = { List solutions, String bucket ->
+    (solutions ?: []).each { solAny ->
+      def sol = asMap(solAny)
+      def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown-solution)'
+
+      // projects may be {add/update/delete} or a flat list or a single map
+      def projects = asList(sol.projects ?: sol.projets)
+      projects.each { projAny ->
+        def proj = asMap(projAny)
+        def projName = normalize(proj.name) ?: '(unknown-project)'
+
+        // apis may be under "apis" (preferred) or legacy "api"
+        def apisNode  = proj.apis ?: proj.api
+        def apisList  = asList(apisNode)
+
+        apisList.each { apiAny ->
+          def api = asMap(apiAny)
+          def apiName   = firstNonNull(api, ['name', 'apiName']) ?: '(unknown-api)'
+          def specsPath = firstNonNull(api, [
+            'openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'
+          ])
+          def imgMap    = asMap(api.image ?: [:])
+          def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name']) // 'name' as last-ditch fallback
+          def action    = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
+
+          apis << [
+            solution: solName,
+            project : projName,
+            name    : apiName,
+            specs   : specsPath,
+            image   : imagePath,
+            action  : action
+          ]
         }
       }
     }
-
-    def solutionsNode = manifest?.dynamics?.solutions
-    if (solutionsNode) {
-      collectApis(solutionsNode.add    as List ?: [], 'add')
-      collectApis(solutionsNode.update as List ?: [], 'update')
-    }
-
-    if (apis.isEmpty()) {
-      echo 'No APIs found under dynamics.solutions.*.projects[].api[].'
-      return
-    }
-
-    apis.each { api ->
-      echo '======================================================='
-      echo "API: ${api.name} (Project: ${api.project})"
-      echo "Specs: ${api.specs}"
-      echo "Image: ${api.image}"
-      echo "Action: ${api.action}"
-      echo '======================================================='
-
-      // === Mock Deployment Flow ===
-      if (api.action?.toLowerCase() == 'upgrade') {
-        echo "[MOCK] helm upgrade -i ${api.project.toLowerCase()} ${api.image} --namespace <namespace>"
-    } else if (api.action?.toLowerCase() == 'restart') {
-        echo "[MOCK] kubectl rollout restart deployment/${api.project.toLowerCase()} -n <namespace>"
-      }
-
-      echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
-
-      echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
-
-      echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-
-      echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-
-      echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
-
-      echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
-    }
-
-  // deploy to k8s ( if action upgrade helm upgrade else restart pod)
-  //  check if api exist
-  // if exist and active then deactivate it then update
-  // else create it
-  // activate api
-  // verify api
   }
+
+  def solutionsNode = manifest?.dynamics?.solutions
+  if (solutionsNode) {
+    collectApis(asList(solutionsNode?.add),    'add')
+    collectApis(asList(solutionsNode?.update), 'update')
+  }
+
+  if (apis.isEmpty()) {
+    echo 'No APIs found under dynamics.solutions.*.projects.*.apis (or legacy .api).'
+    return
+  }
+
+  // ---------- print mock commands ----------
+  apis.each { api ->
+    echo '======================================================='
+    echo "Solution: ${api.solution}"
+    echo "Project : ${api.project}"
+    echo "API     : ${api.name}"
+    echo "Specs   : ${api.specs ?: '(none)'}"
+    echo "Image   : ${api.image ?: '(none)'}"
+    echo "Action  : ${api.action ?: '(none)'}"
+    echo '======================================================='
+
+    // K8s deploy step (only if we have both action & image)
+    if (isRealVal(api.action) && isRealVal(api.image)) {
+      def projKey = api.project.toLowerCase().replaceAll(/\s+/, '-')
+      switch (api.action.toLowerCase()) {
+        case ['upgrade','update','install']:
+          echo "[MOCK] helm upgrade -i ${projKey} ${api.image} --namespace <namespace>"
+          break
+        case 'restart':
+          echo "[MOCK] kubectl rollout restart deployment/${projKey} -n <namespace>"
+          break
+        default:
+          echo "[MOCK] (unknown action '${api.action}') — skipping k8s step"
+      }
+    } else {
+      echo "[INFO] Skipping k8s step (missing image or action)."
+    }
+
+    // API Gateway flow (only if we have name & specs)
+    if (isRealVal(api.name) && isRealVal(api.specs)) {
+      echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
+      echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
+      echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+      echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+      echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
+      echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
+    } else {
+      echo "[INFO] Skipping API Gateway step (missing api name or specs)."
+    }
+  }
+}
+
 
   stage('Extract Integration Server command from manifest') {
       def manifest = readJSON file: 'deployment-manifest.json'
