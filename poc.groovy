@@ -557,6 +557,137 @@ def call(Map cfg = [:]) {
 
 
   stage('Extract Integration Server command from manifest') {
+      // Read manifest
+      def manifest = readJSON file: 'deployment-manifest.json'
+
+      // ---------- helpers ----------
+      def stripQuotes = { s ->
+        if (s == null) return null
+        def t = s.toString().trim()
+        if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+          t = t.substring(1, t.length()-1).trim()
+        }
+        return t
+      }
+      def isRealVal = { v ->
+        if (v == null) return false
+        def t = stripQuotes(v)
+        if (t == null) return false
+        t = t.trim()
+        if (t.isEmpty()) return false
+        if (t.equalsIgnoreCase('null')) return false
+        if (t == '""' || t == "''") return false
+        return true
+      }
+      def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
+
+      def asList = { obj ->
+        if (obj == null)         return []
+        if (obj instanceof List) return obj
+        if (obj instanceof Map) {
+          def acc = []
+          if (obj.add instanceof List)    acc.addAll(obj.add)
+          if (obj.update instanceof List) acc.addAll(obj.update)
+          return acc
+        }
+        return []
+      }
+
+      // ---------- collect packages ----------
+      def pkgs = []
+      def collectPkgs = { List list, String bucket ->
+        (list ?: []).each { raw ->
+          def name     = normalize(raw?.name)
+          def version  = normalize(raw?.version)
+          def img      = raw?.image ?: [:]
+          def imgName  = normalize(img?.name)
+          def imgPath  = normalize(img?.imagePath)
+          def imgVer   = normalize(img?.version)
+          def action   = normalize(img?.action)   // e.g., Update/Upgrade/Restart
+          def cfgPath  = normalize(raw?.configFilePath)
+
+          pkgs << [
+            name          : name ?: '(unknown)',
+            version       : version,
+            imageName     : imgName,
+            imagePath     : imgPath,
+            imageVersion  : imgVer,
+            action        : action,
+            configFilePath: cfgPath,
+            bucket        : bucket
+          ]
+        }
+      }
+
+      def pnode = manifest?.integration?.packages
+      if (pnode) {
+        collectPkgs(asList(pnode?.add),    'add')
+        collectPkgs(asList(pnode?.update), 'update')
+      }
+
+      if (pkgs.isEmpty()) {
+        echo 'No integration packages found under integration.packages.(add|update).'
+        return
+      }
+
+      // ---------- render mock commands ----------
+      def lines = []
+      pkgs.each { pkg ->
+        // derive Helm release name from package name
+        def rel = "integration-${pkg.name.replaceAll(/\W+/, '-').toLowerCase()}"
+
+        // derive repo/tag from imagePath; fall back to imageVersion for tag
+        def repo = null
+        def tag  = null
+        if (isRealVal(pkg.imagePath)) {
+          def s = pkg.imagePath
+          def idx = s.lastIndexOf(':')
+          if (idx > 0 && idx < s.length()-1) {
+            repo = s.substring(0, idx)
+            tag  = s.substring(idx+1)
+          } else {
+            repo = s
+          }
+        }
+        if (!isRealVal(tag)) tag = normalize(pkg.imageVersion)
+
+        lines << '# ==================================================================='
+        lines << "# ${pkg.bucket?.toUpperCase() ?: 'BUCKET'} :: ${pkg.name}${pkg.version ? " v${pkg.version}" : ''}"
+        lines << "# imageName: ${pkg.imageName ?: '(none)'}"
+        lines << "# imagePath: ${pkg.imagePath ?: '(none)'}"
+        lines << "# action   : ${pkg.action ?: '(none)'}"
+        lines << "# config   : ${pkg.configFilePath ?: '(none)'}"
+        lines << '# ==================================================================='
+
+        if (isRealVal(pkg.configFilePath)) {
+          lines << "echo '[MOCK] Using integration config: ${pkg.configFilePath}'"
+        }
+
+        def act = (pkg.action ?: '').toLowerCase()
+        if (['upgrade','update','install'].contains(act) && isRealVal(repo) && isRealVal(tag)) {
+          // Helm upgrade/install mock
+          lines << "echo '[MOCK] Helm upgrade integration server'"
+          lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n <namespace> \\"
+          lines << "  --set image.repository=${repo} \\"
+          lines << "  --set image.tag=${tag}" + (isRealVal(pkg.configFilePath) ? " \\" : "")
+          if (isRealVal(pkg.configFilePath)) {
+            lines << "  --set-file app.config=${pkg.configFilePath}"
+          }
+        } else if (act == 'restart') {
+          // k8s restart mock
+          lines << "echo '[MOCK] Restart integration deployment'"
+          lines << "echo kubectl rollout restart deployment/${rel} -n <namespace>"
+        } else {
+          // Unknown or missing action -> provide guidance
+          lines << "echo '[INFO] Unknown or missing action for ${pkg.name}; expected one of: Upgrade/Update/Install/Restart. Skipping.'"
+        }
+      }
+
+      echo 'Generated Integration Server mock commands:\n' + lines.join('\n')
+   }
+
+
+   stage('Extract Identity commands from manifest') {
   // Read manifest
   def manifest = readJSON file: 'deployment-manifest.json'
 
@@ -581,66 +712,11 @@ def call(Map cfg = [:]) {
   }
   def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
 
-  def asList = { obj ->
-    if (obj == null)         return []
-    if (obj instanceof List) return obj
-    if (obj instanceof Map) {
-      def acc = []
-      if (obj.add instanceof List)    acc.addAll(obj.add)
-      if (obj.update instanceof List) acc.addAll(obj.update)
-      return acc
-    }
-    return []
-  }
-
-  // ---------- collect packages ----------
-  def pkgs = []
-  def collectPkgs = { List list, String bucket ->
-    (list ?: []).each { raw ->
-      def name     = normalize(raw?.name)
-      def version  = normalize(raw?.version)
-      def img      = raw?.image ?: [:]
-      def imgName  = normalize(img?.name)
-      def imgPath  = normalize(img?.imagePath)
-      def imgVer   = normalize(img?.version)
-      def action   = normalize(img?.action)   // e.g., Update/Upgrade/Restart
-      def cfgPath  = normalize(raw?.configFilePath)
-
-      pkgs << [
-        name          : name ?: '(unknown)',
-        version       : version,
-        imageName     : imgName,
-        imagePath     : imgPath,
-        imageVersion  : imgVer,
-        action        : action,
-        configFilePath: cfgPath,
-        bucket        : bucket
-      ]
-    }
-  }
-
-  def pnode = manifest?.integration?.packages
-  if (pnode) {
-    collectPkgs(asList(pnode?.add),    'add')
-    collectPkgs(asList(pnode?.update), 'update')
-  }
-
-  if (pkgs.isEmpty()) {
-    echo 'No integration packages found under integration.packages.(add|update).'
-    return
-  }
-
-  // ---------- render mock commands ----------
-  def lines = []
-  pkgs.each { pkg ->
-    // derive Helm release name from package name
-    def rel = "integration-${pkg.name.replaceAll(/\W+/, '-').toLowerCase()}"
-
-    // derive repo/tag from imagePath; fall back to imageVersion for tag
+  def parseRepoTag = { imagePath, imageVersion ->
     def repo = null
     def tag  = null
-    if (isRealVal(pkg.imagePath)) {
-      def s = pkg.imagePath
+    if (isRealVal(imagePath)) {
+      def s = imagePath
       def idx = s.lastIndexOf(':')
       if (idx > 0 && idx < s.length()-1) {
         repo = s.substring(0, idx)
@@ -649,42 +725,82 @@ def call(Map cfg = [:]) {
         repo = s
       }
     }
-    if (!isRealVal(tag)) tag = normalize(pkg.imageVersion)
+    if (!isRealVal(tag)) tag = normalize(imageVersion)
+    [repo, tag]
+  }
+
+  def mkRelease = { name, key ->
+    def base = isRealVal(name) ? name : key        // prefer provided name, fallback to node key (internet/intranet)
+    "identity-${base.replaceAll(/\W+/, '-').toLowerCase()}"
+  }
+
+  // ---------- collect ----------
+  def nodes = []
+  def idNode = manifest?.identity ?: [:]
+  if (idNode instanceof Map) {
+    if (idNode.containsKey('internet')) nodes << ['key':'internet', 'obj': idNode.internet]
+    if (idNode.containsKey('intranet')) nodes << ['key':'intranet', 'obj': idNode.intranet]
+  }
+
+  if (nodes.isEmpty()) {
+    echo 'No identity nodes found (identity.internet / identity.intranet).'
+    return
+  }
+
+  // ---------- render ----------
+  def lines = []
+  nodes.each { n ->
+    def o        = (n.obj instanceof Map) ? n.obj : [:]
+    def name     = normalize(o.name) ?: "(unknown-${n.key})"
+    def version  = normalize(o.version)
+    def image    = normalize(o.imagePath)
+    def action   = normalize(o.action)     // Start / Restart / Stop / Upgrade / Update / Install
+    def rel      = mkRelease(name, n.key)
+    def (repo, tag) = parseRepoTag(image, /*imageVersion*/ null)
 
     lines << '# ==================================================================='
-    lines << "# ${pkg.bucket?.toUpperCase() ?: 'BUCKET'} :: ${pkg.name}${pkg.version ? " v${pkg.version}" : ''}"
-    lines << "# imageName: ${pkg.imageName ?: '(none)'}"
-    lines << "# imagePath: ${pkg.imagePath ?: '(none)'}"
-    lines << "# action   : ${pkg.action ?: '(none)'}"
-    lines << "# config   : ${pkg.configFilePath ?: '(none)'}"
+    lines << "# IDENTITY :: ${n.key.toUpperCase()} :: ${name}${version ? " v${version}" : ''}"
+    lines << "# imagePath: ${image ?: '(none)'}"
+    lines << "# action   : ${action ?: '(none)'}"
     lines << '# ==================================================================='
 
-    if (isRealVal(pkg.configFilePath)) {
-      lines << "echo '[MOCK] Using integration config: ${pkg.configFilePath}'"
+    if (!isRealVal(action)) {
+      lines << "echo '[INFO] Missing action for ${name}; expected Start/Install/Update/Upgrade/Restart/Stop. Skipping.'"
+      return // next node
     }
 
-    def act = (pkg.action ?: '').toLowerCase()
-    if (['upgrade','update','install'].contains(act) && isRealVal(repo) && isRealVal(tag)) {
-      // Helm upgrade/install mock
-      lines << "echo '[MOCK] Helm upgrade integration server'"
-      lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n <namespace> \\"
-      lines << "  --set image.repository=${repo} \\"
-      lines << "  --set image.tag=${tag}" + (isRealVal(pkg.configFilePath) ? " \\" : "")
-      if (isRealVal(pkg.configFilePath)) {
-        lines << "  --set-file app.config=${pkg.configFilePath}"
-      }
-    } else if (act == 'restart') {
-      // k8s restart mock
-      lines << "echo '[MOCK] Restart integration deployment'"
-      lines << "echo kubectl rollout restart deployment/${rel} -n <namespace>"
-    } else {
-      // Unknown or missing action -> provide guidance
-      lines << "echo '[INFO] Unknown or missing action for ${pkg.name}; expected one of: Upgrade/Update/Install/Restart. Skipping.'"
+    switch (action.toLowerCase()) {
+      // treat Start/Install/Update/Upgrade the same: do a helm upgrade -i with repo/tag
+      case ['start','install','update','upgrade']:
+        if (isRealVal(repo) && isRealVal(tag)) {
+          lines << "echo '[MOCK] Helm upgrade ${n.key} identity service'"
+          lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n <namespace> \\"
+          lines << "  --set image.repository=${repo} \\"
+          lines << "  --set image.tag=${tag}"
+        } else {
+          lines << "echo '[INFO] Missing image repo/tag for ${name}; cannot perform Helm upgrade. Skipping.'"
+        }
+        break
+
+      case 'restart':
+        lines << "echo '[MOCK] Restart ${n.key} identity deployment'"
+        lines << "echo kubectl rollout restart deployment/${rel} -n <namespace>"
+        break
+
+      case 'stop':
+        lines << "echo '[MOCK] Stop ${n.key} identity deployment (scale to 0)'"
+        lines << "echo kubectl scale deployment/${rel} -n <namespace> --replicas=0"
+        break
+
+      default:
+        lines << "echo '[INFO] Unknown action \"${action}\" for ${name}; expected Start/Install/Update/Upgrade/Restart/Stop. Skipping.'"
+        break
     }
   }
 
-  echo 'Generated Integration Server mock commands:\n' + lines.join('\n')
+  echo 'Generated Identity mock commands:\n' + lines.join('\n')
 }
+
 
 }
 return this
