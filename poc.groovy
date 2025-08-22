@@ -235,119 +235,118 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract Flowon commands (solutions)') {
-  steps {
-    script {
-      def manifest = readJSON file: 'deployment-manifest.json'
+  // Read manifest
+  def manifest = readJSON file: 'deployment-manifest.json'
 
-      def conn = (TARGET_ENV_URL ?: '').trim()
-      if (!conn) {
-        error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
-      }
+  // Connection string from prior stage/env
+  def conn = (TARGET_ENV_URL ?: '').trim()
+  if (!conn) {
+    error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
+  }
 
-      // ---- Helpers ----
-      def normalize = { v ->
-        if (v == null) return null
-        if (v instanceof CharSequence) {
-          def t = v.toString().trim()
-          if (t.isEmpty() || t.equalsIgnoreCase('null')) return null
-          return t
-        }
-        return v
-      }
+  // ---- Helpers ----
+  def normalize = { v ->
+    if (v == null) return null
+    if (v instanceof CharSequence) {
+      def t = v.toString().trim()
+      if (t.isEmpty() || t.equalsIgnoreCase('null')) return null
+      return t
+    }
+    return v
+  }
 
-      def asList = { obj ->
-        if (obj == null)         return []
-        if (obj instanceof List) return obj
-        if (obj instanceof Map) {
-          def acc = []
-          ['add', 'update'].each { k -> if (obj[k] instanceof List) acc.addAll(obj[k]) }
-          return acc
-        }
-        return []
-      }
+  def asList = { obj ->
+    if (obj == null)         return []
+    if (obj instanceof List) return obj
+    if (obj instanceof Map) {
+      def acc = []
+      ['add', 'update'].each { k -> if (obj[k] instanceof List) acc.addAll(obj[k]) }
+      return acc
+    }
+    return []
+  }
 
-      def firstNonNull = { Map m, List<String> keys ->
-        for (k in keys) {
-          if (m?.containsKey(k)) {
-            def val = normalize(m[k])
-            if (val != null) return val
-          }
-        }
-        return null
-      }
-
-      def buildCommandsForSolutions = { List sols, String bucketLabel ->
-        def cmds = []
-        (sols ?: []).each { Map sol ->
-          def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown)'
-          echo "Processing ${bucketLabel} solution: ${solName}"
-
-          // Solution import (prefer managedSolutionFilePath; fallback to managedSolution)
-          def managedZip = firstNonNull(sol, ['managedSolutionFilePath', 'managedSolution'])
-          if (managedZip) {
-            def parts = []
-            parts << 'flowon-dynamics i'
-            parts << "--connectionstring \"${conn}\""
-            parts << "-s \"${managedZip}\""
-            parts << '-oc true'
-            parts << '-l Verbose'
-            cmds << parts.join(' ')
-          } else {
-            echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
-          }
-
-          // Projects block: may be {add/update/delete} or a flat list
-          def projects = asList(sol.projects ?: sol.projets)
-          if (!projects) {
-            echo "INFO: solution '${solName}' has no projects to import"
-          }
-
-          projects.each { Map proj ->
-            def flopPath  = firstNonNull(proj, ['flopFilePath', 'flop'])
-            def entityMap = firstNonNull(proj, ['entityDataMapFilePath', 'entityDataMap'])
-            def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath', 'localizedResourceDataMap'])
-            def dataFile  = firstNonNull(proj, ['dataFilePath', 'dataFile'])
-
-            if (!flopPath) {
-              echo "WARN: project '${(proj.name ?: '?')}' missing 'flopFilePath' -> skipping"
-              return
-            }
-
-            def p = []
-            p << 'flowon-dynamics i'
-            p << "--connectionstring \"${conn}\""
-            p << "-p \"${flopPath}\""
-            if (entityMap) p << "-m \"${entityMap}\""
-            if (locResMap) p << "-m \"${locResMap}\""
-            if (dataFile)  p << "-d \"${dataFile}\""
-            p << '-l Verbose'
-            cmds << p.join(' ')
-          }
-        }
-        return cmds
-      }
-
-      // ---- Build commands ----
-      def commands = []
-      def solutionsNode = manifest?.dynamics?.solutions
-      if (!solutionsNode) {
-        echo 'No dynamics.solutions section found in manifest.'
-      } else {
-        commands += buildCommandsForSolutions(asList(solutionsNode?.add),    'add')
-        commands += buildCommandsForSolutions(asList(solutionsNode?.update), 'update')
-        // deletes intentionally ignored
-      }
-
-      if (commands.isEmpty()) {
-        echo 'No dynamics solution/project commands generated.'
-      } else {
-        echo "Generated commands:\n${commands.join('\n')}"
-        // To execute them:
-        // for (c in commands) { sh "set -e; echo Executing: ${c} ; ${c}" }
+  def firstNonNull = { Map m, List<String> keys ->
+    for (k in keys) {
+      if (m?.containsKey(k)) {
+        def val = normalize(m[k])
+        if (val != null) return val
       }
     }
+    return null
+  }
+
+  def buildCommandsForSolutions = { List sols, String bucketLabel ->
+    def cmds = []
+    (sols ?: []).each { Map sol ->
+      def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown)'
+      echo "Processing ${bucketLabel} solution: ${solName}"
+
+      // Solution import (prefer managedSolutionFilePath; fallback to managedSolution)
+      def managedZip = firstNonNull(sol, ['managedSolutionFilePath', 'managedSolution'])
+      if (managedZip) {
+        def parts = []
+        parts << 'flowon-dynamics i'
+        parts << "--connectionstring \"${conn}\""
+        parts << "-s \"${managedZip}\""
+        parts << '-oc true'
+        parts << '-l Verbose'
+        cmds << parts.join(' ')
+      } else {
+        echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
+      }
+
+      // Projects block: may be {add/update/delete} or a flat list
+      def projects = asList(sol.projects ?: sol.projets)
+      if (!projects) {
+        echo "INFO: solution '${solName}' has no projects to import"
+      }
+
+      projects.each { Map proj ->
+        def flopPath  = firstNonNull(proj, ['flopFilePath', 'flop'])
+        def entityMap = firstNonNull(proj, ['entityDataMapFilePath', 'entityDataMap'])
+        def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath', 'localizedResourceDataMap'])
+        def dataFile  = firstNonNull(proj, ['dataFilePath', 'dataFile'])
+
+        if (!flopPath) {
+          echo "WARN: project '${(proj.name ?: '?')}' missing 'flopFilePath' -> skipping"
+          return
+        }
+
+        def p = []
+        p << 'flowon-dynamics i'
+        p << "--connectionstring \"${conn}\""
+        p << "-p \"${flopPath}\""
+        if (entityMap) p << "-m \"${entityMap}\""
+        if (locResMap) p << "-m \"${locResMap}\""
+        if (dataFile)  p << "-d \"${dataFile}\""
+        p << '-l Verbose'
+        cmds << p.join(' ')
+      }
+    }
+    return cmds
+  }
+
+  // ---- Build commands ----
+  def commands = []
+  def solutionsNode = manifest?.dynamics?.solutions
+  if (!solutionsNode) {
+    echo 'No dynamics.solutions section found in manifest.'
+  } else {
+    commands += buildCommandsForSolutions(asList(solutionsNode?.add),    'add')
+    commands += buildCommandsForSolutions(asList(solutionsNode?.update), 'update')
+    // deletes intentionally ignored
+  }
+
+  if (commands.isEmpty()) {
+    echo 'No dynamics solution/project commands generated.'
+  } else {
+    echo "Generated commands:\n${commands.join('\n')}"
+    // To execute:
+    // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
   }
 }
+
 
 
   stage('Extract Client Extension command from manifest') {
