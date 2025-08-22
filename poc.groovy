@@ -557,64 +557,134 @@ def call(Map cfg = [:]) {
 
 
   stage('Extract Integration Server command from manifest') {
-      def manifest = readJSON file: 'deployment-manifest.json'
+  // Read manifest
+  def manifest = readJSON file: 'deployment-manifest.json'
 
-      def pkgs = []
-      def collectPkgs = { List list, String bucket ->
-        (list ?: []).each { pkg ->
-          pkgs << [
-            name           : pkg.name ?: '',
-            version        : pkg.version ?: '',
-            imageName      : pkg.image?.name ?: '',
-            imagePath      : pkg.image?.path ?: '',
-            imageVersion   : pkg.image?.version ?: '',
-            action         : pkg.image?.action ?: '',
-            configFilePath : pkg.configFilePath ?: '',
-            bucket         : bucket
-          ]
-        }
-      }
-
-      def pnode = manifest?.integration?.packages
-      if (pnode) {
-        collectPkgs(pnode.add    as List ?: [], 'add')
-        collectPkgs(pnode.update as List ?: [], 'update')
-      }
-
-      if (pkgs.isEmpty()) {
-        echo 'No integration packages found under integration.packages.(add|update).'
-        return
-      }
-
-      def lines = []
-      pkgs.each { pkg ->
-        def rel = "integration-${pkg.name.replaceAll(/\\W+/, '-').toLowerCase()}"// change later if you want to map by ENVIRONMENT
-
-        lines << '# ==================================================================='
-        lines << "# ${pkg.bucket.toUpperCase()} :: ${pkg.name} v${pkg.version}"
-        lines << "# imageName: ${pkg.imageName}"
-        lines << "# imagePath: ${pkg.imagePath}"
-        lines << "# action   : ${pkg.action}"
-        lines << "# config   : ${pkg.configFilePath}"
-        lines << '# ==================================================================='
-
-        if (pkg.configFilePath) {
-          lines << "echo \"[MOCK] Using integration config: ${pkg.configFilePath}\""
-        }
-
-        if (pkg.action?.equalsIgnoreCase('Upgrade')) {
-          lines << 'echo \"[MOCK] Helm upgrade integration server\"'
-          lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n namespace \\"
-          lines << "  --set image.repository=${pkg.imagePath.split(':')[0]} \\"
-          lines << "  --set image.tag=${(pkg.imagePath.contains(':') ? pkg.imagePath.split(':')[-1] : pkg.imageVersion)} \\"
-          (pkg.configFilePath ? lines << "  --set-file app.config=${pkg.configFilePath}" : null)
-        } else {
-          lines << 'echo \"[MOCK] Restart integration deployment\"'
-          lines << "echo kubectl rollout restart deployment/${rel} -n namespace"
-        }
-      }
-
-      echo 'Generated Integration Server mock commands:\n' + lines.join('\n')
+  // ---------- helpers ----------
+  def stripQuotes = { s ->
+    if (s == null) return null
+    def t = s.toString().trim()
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      t = t.substring(1, t.length()-1).trim()
+    }
+    return t
   }
+  def isRealVal = { v ->
+    if (v == null) return false
+    def t = stripQuotes(v)
+    if (t == null) return false
+    t = t.trim()
+    if (t.isEmpty()) return false
+    if (t.equalsIgnoreCase('null')) return false
+    if (t == '""' || t == "''") return false
+    return true
+  }
+  def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
+
+  def asList = { obj ->
+    if (obj == null)         return []
+    if (obj instanceof List) return obj
+    if (obj instanceof Map) {
+      def acc = []
+      if (obj.add instanceof List)    acc.addAll(obj.add)
+      if (obj.update instanceof List) acc.addAll(obj.update)
+      return acc
+    }
+    return []
+  }
+
+  // ---------- collect packages ----------
+  def pkgs = []
+  def collectPkgs = { List list, String bucket ->
+    (list ?: []).each { raw ->
+      def name     = normalize(raw?.name)
+      def version  = normalize(raw?.version)
+      def img      = raw?.image ?: [:]
+      def imgName  = normalize(img?.name)
+      def imgPath  = normalize(img?.imagePath)
+      def imgVer   = normalize(img?.version)
+      def action   = normalize(img?.action)   // e.g., Update/Upgrade/Restart
+      def cfgPath  = normalize(raw?.configFilePath)
+
+      pkgs << [
+        name          : name ?: '(unknown)',
+        version       : version,
+        imageName     : imgName,
+        imagePath     : imgPath,
+        imageVersion  : imgVer,
+        action        : action,
+        configFilePath: cfgPath,
+        bucket        : bucket
+      ]
+    }
+  }
+
+  def pnode = manifest?.integration?.packages
+  if (pnode) {
+    collectPkgs(asList(pnode?.add),    'add')
+    collectPkgs(asList(pnode?.update), 'update')
+  }
+
+  if (pkgs.isEmpty()) {
+    echo 'No integration packages found under integration.packages.(add|update).'
+    return
+  }
+
+  // ---------- render mock commands ----------
+  def lines = []
+  pkgs.each { pkg ->
+    // derive Helm release name from package name
+    def rel = "integration-${pkg.name.replaceAll(/\W+/, '-').toLowerCase()}"
+
+    // derive repo/tag from imagePath; fall back to imageVersion for tag
+    def repo = null
+    def tag  = null
+    if (isRealVal(pkg.imagePath)) {
+      def s = pkg.imagePath
+      def idx = s.lastIndexOf(':')
+      if (idx > 0 && idx < s.length()-1) {
+        repo = s.substring(0, idx)
+        tag  = s.substring(idx+1)
+      } else {
+        repo = s
+      }
+    }
+    if (!isRealVal(tag)) tag = normalize(pkg.imageVersion)
+
+    lines << '# ==================================================================='
+    lines << "# ${pkg.bucket?.toUpperCase() ?: 'BUCKET'} :: ${pkg.name}${pkg.version ? " v${pkg.version}" : ''}"
+    lines << "# imageName: ${pkg.imageName ?: '(none)'}"
+    lines << "# imagePath: ${pkg.imagePath ?: '(none)'}"
+    lines << "# action   : ${pkg.action ?: '(none)'}"
+    lines << "# config   : ${pkg.configFilePath ?: '(none)'}"
+    lines << '# ==================================================================='
+
+    if (isRealVal(pkg.configFilePath)) {
+      lines << "echo '[MOCK] Using integration config: ${pkg.configFilePath}'"
+    }
+
+    def act = (pkg.action ?: '').toLowerCase()
+    if (['upgrade','update','install'].contains(act) && isRealVal(repo) && isRealVal(tag)) {
+      // Helm upgrade/install mock
+      lines << "echo '[MOCK] Helm upgrade integration server'"
+      lines << "echo helm upgrade -i ${rel} <chart-path-or-name> -n <namespace> \\"
+      lines << "  --set image.repository=${repo} \\"
+      lines << "  --set image.tag=${tag}" + (isRealVal(pkg.configFilePath) ? " \\" : "")
+      if (isRealVal(pkg.configFilePath)) {
+        lines << "  --set-file app.config=${pkg.configFilePath}"
+      }
+    } else if (act == 'restart') {
+      // k8s restart mock
+      lines << "echo '[MOCK] Restart integration deployment'"
+      lines << "echo kubectl rollout restart deployment/${rel} -n <namespace>"
+    } else {
+      // Unknown or missing action -> provide guidance
+      lines << "echo '[INFO] Unknown or missing action for ${pkg.name}; expected one of: Upgrade/Update/Install/Restart. Skipping.'"
+    }
+  }
+
+  echo 'Generated Integration Server mock commands:\n' + lines.join('\n')
+}
+
 }
 return this
