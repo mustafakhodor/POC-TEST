@@ -390,95 +390,94 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract APIs command from manifest') {
-    def manifest = readJSON file: 'deployment-manifest.json'
+  def manifest = readJSON file: 'deployment-manifest.json'
 
-    def apis = []
+  def apis = []
 
-    def collectApis = { Object solutionsNode, String bucket ->
-      def sols = asList(solutionsNode)
-      sols.each { solAny ->
-        def sol = asMap(solAny)
-        def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown-solution)'
+  def collectApis = { Object solutionsNode, String bucket ->
+    def sols = asList(solutionsNode)
+    sols.each { solAny ->
+      def sol = asMap(solAny)
+      def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown-solution)'
 
-        def projects = asList(sol.projects ?: sol.projets)
-        projects.each { projAny ->
-          def proj = asMap(projAny)
-          def projName = normalize(proj.get('name')) ?: '(unknown-project)'
+      def projects = asList(sol.projects ?: sol.projets)
+      projects.each { projAny ->
+        def proj = asMap(projAny)
+        def projName = normalize(proj.get('name')) ?: '(unknown-project)'
 
-          def apisNode = proj.apis ?: proj.api
-          def apiList  = asList(apisNode)
+        // If no apis/api node, skip this project entirely
+        def apisNode = proj.apis ?: proj.api
+        if (apisNode == null) return
 
-          apiList.each { apiAny ->
-            def api = asMap(apiAny)
-            def apiName   = firstNonNull(api, ['name', 'apiName']) ?: '(unknown-api)'
-            def specsPath = firstNonNull(api, ['openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'])
+        def apiList = asList(apisNode)
+        if (!apiList) return // nothing to do for this project
 
-            def imgMap    = asMap(api.image ?: [:])
-            def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name'])
-            def actionVal = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
+        apiList.each { apiAny ->
+          def api = asMap(apiAny)
+          def apiName   = firstNonNull(api, ['name', 'apiName']) ?: '(unknown-api)'
+          def specsPath = firstNonNull(api, ['openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'])
 
-            apis << [
-              solution: solName,
-              project : projName,
-              name    : apiName,
-              specs   : specsPath,
-              image   : imagePath,
-              action  : actionVal
-            ]
-          }
+          def imgMap    = asMap(api.image ?: [:])
+          def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name'])
+          def actionVal = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
+
+          apis << [
+            solution: solName,
+            project : projName,
+            name    : apiName,
+            specs   : specsPath,
+            image   : imagePath,
+            action  : actionVal
+          ]
         }
-      }
-    }
-
-    def solutionsNode = manifest?.dynamics?.solutions
-    if (solutionsNode) {
-      collectApis(solutionsNode?.add,    'add')
-      collectApis(solutionsNode?.update, 'update')
-    }
-
-    if (apis.isEmpty()) {
-      echo 'No APIs found under dynamics.solutions.*.projects.*.apis (or legacy .api).'
-      return
-    }
-
-    apis.each { api ->
-      echo '======================================================='
-      echo "Solution: ${api.solution}"
-      echo "Project : ${api.project}"
-      echo "API     : ${api.name}"
-      echo "Specs   : ${api.specs ?: '(none)'}"
-      echo "Image   : ${api.image ?: '(none)'}"
-      echo "Action  : ${api.action ?: '(none)'}"
-      echo '======================================================='
-
-      if (isRealVal(api.action) && isRealVal(api.image)) {
-        def projKey = api.project.toLowerCase().replaceAll(/\s+/, '-')
-        switch (api.action.toLowerCase()) {
-          case ['upgrade','update','install']:
-            echo "[MOCK] helm upgrade -i ${projKey} ${api.image} --namespace <namespace>"
-            break
-          case 'restart':
-            echo "[MOCK] kubectl rollout restart deployment/${projKey} -n <namespace>"
-            break
-          default:
-            echo "[MOCK] (unknown action '${api.action}') — skipping k8s step"
-        }
-      } else {
-        echo '[INFO] Skipping k8s step (missing image or action).'
-      }
-
-      if (isRealVal(api.name) && isRealVal(api.specs)) {
-        echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
-        echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
-        echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-        echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
-        echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
-        echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
-      } else {
-        echo '[INFO] Skipping API Gateway step (missing api name or specs).'
       }
     }
   }
+
+  def solutionsNode = manifest?.dynamics?.solutions
+  if (solutionsNode) {
+    collectApis(solutionsNode?.add,    'add')
+    collectApis(solutionsNode?.update, 'update')
+  }
+
+  // If nothing collected, just exit the stage silently
+  if (apis.isEmpty()) return
+
+  apis.each { api ->
+    echo '======================================================='
+    echo "Solution: ${api.solution}"
+    echo "Project : ${api.project}"
+    echo "API     : ${api.name}"
+    echo "Specs   : ${api.specs ?: '(none)'}"
+    echo "Image   : ${api.image ?: '(none)'}"
+    echo "Action  : ${api.action ?: '(none)'}"
+    echo '======================================================='
+
+    if (isRealVal(api.action) && isRealVal(api.image)) {
+      def projKey = api.project.toLowerCase().replaceAll(/\s+/, '-')
+      switch (api.action.toLowerCase()) {
+        case ['upgrade','update','install']:
+          echo "[MOCK] helm upgrade -i ${projKey} ${api.image} --namespace <namespace>"
+          break
+        case 'restart':
+          echo "[MOCK] kubectl rollout restart deployment/${projKey} -n <namespace>"
+          break
+        default:
+          echo "[MOCK] (unknown action '${api.action}') — skipping k8s step"
+      }
+    }
+
+    if (isRealVal(api.name) && isRealVal(api.specs)) {
+      echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
+      echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
+      echo "[MOCK] If API exists -> Update with specs: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>?overwriteTags=true -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+      echo "[MOCK] Else Create: curl -X POST \$API_GATEWAY_URL/rest/apigateway/apis -F \"file=@${api.specs}\" -F \"apiName=${api.name}\""
+      echo "[MOCK] Activate API: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/activate"
+      echo "[MOCK] Verify API: http GET \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>"
+    }
+  }
+}
+
 
   stage('Extract Integration Server command from manifest') {
     def manifest = readJSON file: 'deployment-manifest.json'
