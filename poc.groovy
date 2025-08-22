@@ -400,7 +400,6 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract APIs command from manifest') {
-  // Read manifest
   def manifest = readJSON file: 'deployment-manifest.json'
 
   // ---------- helpers ----------
@@ -424,14 +423,15 @@ def call(Map cfg = [:]) {
   }
   def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
 
+  // Coerce anything to a Map (if Map.Entry -> use its value)
   def asMap = { obj ->
     if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
     return (obj instanceof Map) ? obj : [:]
   }
 
-  // Turns many shapes into a flat list:
+  // Coerce anything to a List of *items*:
   // - null -> []
-  // - List -> as is
+  // - List -> itself
   // - Map with {add/update/delete} arrays -> concat add+update
   // - Map (single object) -> [that map]
   // - Map.Entry -> recurse on value
@@ -463,30 +463,30 @@ def call(Map cfg = [:]) {
 
   // ---------- collect APIs ----------
   def apis = []
-  def collectApis = { List solutions, String bucket ->
-    (solutions ?: []).each { solAny ->
+
+  def collectApis = { Object solutionsNode, String bucket ->
+    def sols = asList(solutionsNode)
+    sols.each { solAny ->
       def sol = asMap(solAny)
       def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown-solution)'
 
-      // projects may be {add/update/delete} or a flat list or a single map
       def projects = asList(sol.projects ?: sol.projets)
       projects.each { projAny ->
         def proj = asMap(projAny)
-        def projName = normalize(proj.name) ?: '(unknown-project)'
+        def projName = normalize(proj.get('name')) ?: '(unknown-project)'
 
-        // apis may be under "apis" (preferred) or legacy "api"
-        def apisNode  = proj.apis ?: proj.api
-        def apisList  = asList(apisNode)
+        // New key "apis"; legacy key "api"
+        def apisNode = proj.apis ?: proj.api
+        def apiList  = asList(apisNode)
 
-        apisList.each { apiAny ->
+        apiList.each { apiAny ->
           def api = asMap(apiAny)
           def apiName   = firstNonNull(api, ['name', 'apiName']) ?: '(unknown-api)'
-          def specsPath = firstNonNull(api, [
-            'openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'
-          ])
+          def specsPath = firstNonNull(api, ['openApiSpecsFilePath', 'openApiSpecs', 'specs', 'filePath'])
+
           def imgMap    = asMap(api.image ?: [:])
-          def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name']) // 'name' as last-ditch fallback
-          def action    = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
+          def imagePath = firstNonNull(imgMap, ['imagePath', 'path', 'name']) // last fallback: name
+          def actionVal = firstNonNull(api, ['action']) ?: firstNonNull(imgMap, ['action'])
 
           apis << [
             solution: solName,
@@ -494,7 +494,7 @@ def call(Map cfg = [:]) {
             name    : apiName,
             specs   : specsPath,
             image   : imagePath,
-            action  : action
+            action  : actionVal
           ]
         }
       }
@@ -503,8 +503,8 @@ def call(Map cfg = [:]) {
 
   def solutionsNode = manifest?.dynamics?.solutions
   if (solutionsNode) {
-    collectApis(asList(solutionsNode?.add),    'add')
-    collectApis(asList(solutionsNode?.update), 'update')
+    collectApis(solutionsNode?.add,    'add')
+    collectApis(solutionsNode?.update, 'update')
   }
 
   if (apis.isEmpty()) {
@@ -523,7 +523,7 @@ def call(Map cfg = [:]) {
     echo "Action  : ${api.action ?: '(none)'}"
     echo '======================================================='
 
-    // K8s deploy step (only if we have both action & image)
+    // K8s deploy (only with real action & image)
     if (isRealVal(api.action) && isRealVal(api.image)) {
       def projKey = api.project.toLowerCase().replaceAll(/\s+/, '-')
       switch (api.action.toLowerCase()) {
@@ -540,7 +540,7 @@ def call(Map cfg = [:]) {
       echo "[INFO] Skipping k8s step (missing image or action)."
     }
 
-    // API Gateway flow (only if we have name & specs)
+    // API Gateway flow (only with real name & specs)
     if (isRealVal(api.name) && isRealVal(api.specs)) {
       echo "[MOCK] Check if API ${api.name} exists: http GET \$API_GATEWAY_URL/rest/apigateway/apis --auth \$CRED_ID"
       echo "[MOCK] If API exists and active -> Deactivate: curl -X PUT \$API_GATEWAY_URL/rest/apigateway/apis/<API_ID>/deactivate"
@@ -553,6 +553,7 @@ def call(Map cfg = [:]) {
     }
   }
 }
+
 
 
   stage('Extract Integration Server command from manifest') {
