@@ -235,37 +235,42 @@ def call(Map cfg = [:]) {
   }
 
   stage('Extract Flowon commands (solutions)') {
-  // Read manifest
   def manifest = readJSON file: 'deployment-manifest.json'
 
-  // Connection string from prior stage/env
   def conn = (TARGET_ENV_URL ?: '').trim()
   if (!conn) {
     error 'TARGET_ENV_URL is empty. Make sure you set it in a prior stage.'
   }
 
   // ---- Helpers ----
-  def normalize = { v ->
-    if (v == null) return null
-    if (v instanceof CharSequence) {
-      def t = v.toString().trim()
-      if (t.isEmpty() || t.equalsIgnoreCase('null')) return null
-      return t
+  def stripQuotes = { s ->
+    if (s == null) return null
+    def t = s.toString().trim()
+    // remove a single pair of matching leading/trailing quotes if present
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      t = t.substring(1, t.length()-1).trim()
     }
-    return v
+    return t
   }
 
-  // Coerce an element that might be Map, Map.Entry, or something else
+  def isRealVal = { v ->
+    if (v == null) return false
+    def t = stripQuotes(v)
+    if (t == null) return false
+    t = t.trim()
+    if (t.isEmpty()) return false
+    if (t.equalsIgnoreCase('null')) return false
+    if (t == '""' || t == "''") return false
+    return true
+  }
+
+  def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
+
   def asMap = { obj ->
     if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
     return (obj instanceof Map) ? obj : [:]
   }
 
-  // List coercion that handles:
-  // - null -> []
-  // - List -> unchanged
-  // - Map with add/update arrays -> concatenated
-  // - Map (single project map) -> [that map]
   def asList = { obj ->
     if (obj == null)         return []
     if (obj instanceof List) return obj
@@ -276,10 +281,8 @@ def call(Map cfg = [:]) {
         if (obj.update instanceof List) acc.addAll(obj.update)
         return acc
       }
-      // treat as a single project map
       return [obj]
     }
-    // Map.Entry -> treat value
     if (obj instanceof Map.Entry) {
       def v = obj.value
       if (v instanceof List) return v
@@ -291,8 +294,8 @@ def call(Map cfg = [:]) {
   def firstNonNull = { Map m, List<String> keys ->
     for (k in keys) {
       if (m?.containsKey(k)) {
-        def val = normalize(m[k])
-        if (val != null) return val
+        def v = normalize(m[k])
+        if (v != null) return v
       }
     }
     return null
@@ -302,11 +305,10 @@ def call(Map cfg = [:]) {
     def cmds = []
     (sols ?: []).each { solAny ->
       def sol = asMap(solAny)
-      def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown)'
+      def solName = firstNonNull(sol, ['name','solution']) ?: '(unknown)'
       echo "Processing ${bucketLabel} solution: ${solName}"
 
-      // Solution import (prefer managedSolutionFilePath; fallback to managedSolution)
-      def managedZip = firstNonNull(sol, ['managedSolutionFilePath', 'managedSolution'])
+      def managedZip = firstNonNull(sol, ['managedSolutionFilePath','managedSolution'])
       if (managedZip) {
         def parts = []
         parts << 'flowon-dynamics i'
@@ -319,7 +321,6 @@ def call(Map cfg = [:]) {
         echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
       }
 
-      // Projects: may be {add/update/delete}, a flat list, or a single map
       def projects = asList(sol.projects ?: sol.projets)
       if (!projects) {
         echo "INFO: solution '${solName}' has no projects to import"
@@ -328,10 +329,10 @@ def call(Map cfg = [:]) {
       projects.each { projAny ->
         def proj = asMap(projAny)
 
-        def flopPath  = firstNonNull(proj, ['flopFilePath', 'flop'])
-        def entityMap = firstNonNull(proj, ['entityDataMapFilePath', 'entityDataMap'])
-        def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath', 'localizedResourceDataMap'])
-        def dataFile  = firstNonNull(proj, ['dataFilePath', 'dataFile'])
+        def flopPath  = firstNonNull(proj, ['flopFilePath','flop'])
+        def entityMap = firstNonNull(proj, ['entityDataMapFilePath','entityDataMap'])
+        def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath','localizedResourceDataMap'])
+        def dataFile  = firstNonNull(proj, ['dataFilePath','dataFile'])
 
         if (!flopPath) {
           def pname = normalize(proj.name) ?: '?'
@@ -343,9 +344,9 @@ def call(Map cfg = [:]) {
         p << 'flowon-dynamics i'
         p << "--connectionstring \"${conn}\""
         p << "-p \"${flopPath}\""
-        if (entityMap) p << "-m \"${entityMap}\""
-        if (locResMap) p << "-m \"${locResMap}\""
-        if (dataFile)  p << "-d \"${dataFile}\""
+        if (isRealVal(entityMap)) p << "-m \"${entityMap}\""
+        if (isRealVal(locResMap)) p << "-m \"${locResMap}\""
+        if (isRealVal(dataFile))  p << "-d \"${dataFile}\""
         p << '-l Verbose'
         cmds << p.join(' ')
       }
@@ -353,7 +354,6 @@ def call(Map cfg = [:]) {
     return cmds
   }
 
-  // ---- Build commands ----
   def commands = []
   def solutionsNode = manifest?.dynamics?.solutions
   if (!solutionsNode) {
@@ -361,17 +361,16 @@ def call(Map cfg = [:]) {
   } else {
     commands += buildCommandsForSolutions(asList(solutionsNode?.add),    'add')
     commands += buildCommandsForSolutions(asList(solutionsNode?.update), 'update')
-    // deletes intentionally ignored
   }
 
   if (commands.isEmpty()) {
     echo 'No dynamics solution/project commands generated.'
   } else {
     echo "Generated commands:\n${commands.join('\n')}"
-    // To execute:
     // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
   }
 }
+
 
 
   stage('Extract Client Extension command from manifest') {
