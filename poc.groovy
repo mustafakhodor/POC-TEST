@@ -3,9 +3,6 @@ import groovy.transform.Field
 @Field String TARGET_ENV_URL = null
 
 def call(Map cfg = [:]) {
-  // =========================
-  // Reusable helpers (one file)
-  // =========================
   def stripQuotes = { s ->
     if (s == null) return null
     def t = s.toString().trim()
@@ -25,21 +22,10 @@ def call(Map cfg = [:]) {
     return true
   }
   def normalize = { v -> isRealVal(v) ? stripQuotes(v) : null }
-
-  /** Coerce anything to Map (Map.Entry -> value, else empty) */
   def asMap = { obj ->
     if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
     return (obj instanceof Map) ? obj : [:]
   }
-
-  /**
-   * Coerce shapes to a flat List:
-   *  - null -> []
-   *  - List -> as is
-   *  - Map with {add/update/delete} arrays -> concat add+update
-   *  - Map (single object) -> [that map]
-   *  - Map.Entry -> recurse on value
-   */
   def asList = { obj ->
     if (obj == null)         return []
     if (obj instanceof List) return obj
@@ -59,8 +45,6 @@ def call(Map cfg = [:]) {
     }
     return []
   }
-
-  /** Return first non-null/real value found among keys */
   def firstNonNull = { Map m, List<String> keys ->
     for (k in keys) {
       if (m?.containsKey(k)) {
@@ -70,8 +54,6 @@ def call(Map cfg = [:]) {
     }
     return null
   }
-
-  /** Parse imagePath repo:tag; if tag missing, fall back to imageVersion */
   def parseRepoTag = { imagePath, imageVersion ->
     String repo = null
     String tag  = null
@@ -88,8 +70,6 @@ def call(Map cfg = [:]) {
     if (!isRealVal(tag)) tag = normalize(imageVersion)
     [repo, tag]
   }
-
-  /** Build a release name with prefix and slug */
   def mkRelease = { baseName, fallbackKey, prefix ->
     def base = isRealVal(baseName) ? baseName : fallbackKey
     (prefix + '-' + base.replaceAll(/\W+/, '-').toLowerCase())
@@ -120,172 +100,172 @@ def call(Map cfg = [:]) {
 
   stage('Create deployment manifest file') {
     def manifestJson = '''{
-  "liferay": {
-    "clientExtensions": {
-      "add": [
-        {
-          "name": "moj-task-information",
-          "version": "1.0.0",
-          "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-information.zip",
-          "provenance": {
-            "sourceBranch": "refs/heads/main",
-            "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
-            "buildNumber": "v-34-2e0b2050",
-            "releaseNotes": "Initial release"
-          }
-        },
-        {
-          "name": "moj-task-internal-information",
-          "version": "1.0.0",
-          "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-internal-information.zip",
-          "provenance": {
-            "sourceBranch": "refs/heads/main",
-            "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
-            "buildNumber": "v-34-2e0b2050",
-            "releaseNotes": "Initial release"
-          }
-        },
-        {
-          "name": "moj-task-internal-list",
-          "version": "1.0.0",
-          "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-internal-list.zip",
-          "provenance": {
-            "sourceBranch": "refs/heads/main",
-            "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
-            "buildNumber": "v-34-2e0b2050",
-            "releaseNotes": "Initial release"
-          }
-        },
-        {
-          "name": "moj-task-list",
-          "version": "1.0.0",
-          "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-list.zip",
-          "provenance": {
-            "sourceBranch": "refs/heads/main",
-            "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
-            "buildNumber": "v-34-2e0b2050",
-            "releaseNotes": "Initial release"
-          }
-        }
-      ],
-      "update": [],
-      "delete": []
-    },
-    "contentPages": {
-      "add": [],
-      "update": [],
-      "delete": []
-    }
-  },
-  "dynamics": {
-    "solutions": {
-      "add": [],
-      "update": [
-        {
-          "name": "LegalRepresentative",
-          "version": "1.0.0.46",
-          "managedSolutionFilePath": "https://artifacts.moj.gov.ae/repository/legal-representative-module/v-54-acf3bdf4/crm/src/LegalRepresentative_managed.zip",
-          "unmanagedSolutionFilePath": "https://artifacts.moj.gov.ae/repository/legal-representative-module/v-54-acf3bdf4/crm/src/LegalRepresentative_unmanaged.zip",
-          "projects": {
-            "add": [],
-            "update": [
-              {
-                "name": "Legal Representative",
-                "flopFilePath": "https://artifacts.moj.gov.ae/repository/legal-representative-module/v-54-acf3bdf4/crm/src/Legal_Representative.flop",
-                "localizedResourceDataMapFilePath": null,
-                "entityDataMapFilePath": null,
-                "serviceConnectionDataMapFilePath": null,
-                "configurationDataMapFilePath": null,
-                "dataFilePath": null,
-                "apis": {
-                  "add": [],
-                  "update": [],
-                  "delete": []
-                }
+      "liferay": {
+        "clientExtensions": {
+          "add": [
+            {
+              "name": "moj-task-information",
+              "version": "1.0.0",
+              "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-information.zip",
+              "provenance": {
+                "sourceBranch": "refs/heads/main",
+                "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
+                "buildNumber": "v-34-2e0b2050",
+                "releaseNotes": "Initial release"
               }
-            ],
-            "delete": []
-          },
+            },
+            {
+              "name": "moj-task-internal-information",
+              "version": "1.0.0",
+              "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-internal-information.zip",
+              "provenance": {
+                "sourceBranch": "refs/heads/main",
+                "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
+                "buildNumber": "v-34-2e0b2050",
+                "releaseNotes": "Initial release"
+              }
+            },
+            {
+              "name": "moj-task-internal-list",
+              "version": "1.0.0",
+              "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-internal-list.zip",
+              "provenance": {
+                "sourceBranch": "refs/heads/main",
+                "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
+                "buildNumber": "v-34-2e0b2050",
+                "releaseNotes": "Initial release"
+              }
+            },
+            {
+              "name": "moj-task-list",
+              "version": "1.0.0",
+              "filePath": "tasks-module/v-34-2e0b2050/clientextensions/moj-task-list.zip",
+              "provenance": {
+                "sourceBranch": "refs/heads/main",
+                "sourceCommitId": "2e0b205002cf0ac20eac5899b4280d642a6a5372",
+                "buildNumber": "v-34-2e0b2050",
+                "releaseNotes": "Initial release"
+              }
+            }
+          ],
+          "update": [],
+          "delete": []
+        },
+        "contentPages": {
+          "add": [],
+          "update": [],
+          "delete": []
+        }
+      },
+      "dynamics": {
+        "solutions": {
+          "add": [],
+          "update": [
+            {
+              "name": "LegalRepresentative",
+              "version": "1.0.0.46",
+              "managedSolutionFilePath": "https://artifacts.moj.gov.ae/repository/legal-representative-module/v-54-acf3bdf4/crm/src/LegalRepresentative_managed.zip",
+              "unmanagedSolutionFilePath": "https://artifacts.moj.gov.ae/repository/legal-representative-module/v-54-acf3bdf4/crm/src/LegalRepresentative_unmanaged.zip",
+              "projects": {
+                "add": [],
+                "update": [
+                  {
+                    "name": "Legal Representative",
+                    "flopFilePath": "https://artifacts.moj.gov.ae/repository/legal-representative-module/v-54-acf3bdf4/crm/src/Legal_Representative.flop",
+                    "localizedResourceDataMapFilePath": null,
+                    "entityDataMapFilePath": null,
+                    "serviceConnectionDataMapFilePath": null,
+                    "configurationDataMapFilePath": null,
+                    "dataFilePath": null,
+                    "apis": {
+                      "add": [],
+                      "update": [],
+                      "delete": []
+                    }
+                  }
+                ],
+                "delete": []
+              },
+              "provenance": {
+                "sourceBranch": "refs/heads/main",
+                "sourceCommitId": "acf3bdf4ce6d83528ff2af9070a81173f6b83e26",
+                "buildNumber": "v-54-acf3bdf4",
+                "releaseNotes": "the Initial release"
+              }
+            }
+          ],
+          "delete": [
+            { "name": "MOJOrganizationManagement", "artifactType": "DynamicsSolution" },
+            { "name": "InboundIntegration", "artifactType": "DynamicsSolution" },
+            { "name": "ReportManagement", "artifactType": "DynamicsSolution" },
+            { "name": "Profile", "artifactType": "DynamicsSolution" },
+            { "name": "AssetManagement", "artifactType": "DynamicsSolution" },
+            { "name": "DebtManagement", "artifactType": "DynamicsSolution" },
+            { "name": "Session", "artifactType": "DynamicsSolution" },
+            { "name": "TE", "artifactType": "DynamicsSolution" },
+            { "name": "LegalOpinion", "artifactType": "DynamicsSolution" },
+            { "name": "LegalRequestEngine", "artifactType": "DynamicsSolution" },
+            { "name": "Decisions", "artifactType": "DynamicsSolution" },
+            { "name": "Judgment", "artifactType": "DynamicsSolution" },
+            { "name": "LegalFiles", "artifactType": "DynamicsSolution" }
+          ]
+        }
+      },
+      "integration": {
+        "packages": {
+          "add": [
+            {
+              "name": "ADAWQAF",
+              "version": "1.0.0",
+              "image": {
+                "name": "InternetIdentityService",
+                "version": "1.0.0",
+                "imagePath": "docker-registry.moj.gov.ae/repository/moj-docker/identity/internet:v-20-ed1edd2e",
+                "action": "Update",
+                "provenance": {
+                  "sourceBranch": "refs/heads/feature/publishMetadata",
+                  "sourceCommitId": "ed1edd2ed65a00e9cdaaed55afd0ba0f2f418edf",
+                  "buildNumber": "v-20-ed1edd2e",
+                  "releaseNotes": "Initial release of the internet identity service."
+                }
+              },
+              "configFilePath": null,
+              "direction": "Inbound",
+              "apiScope": "Internet",
+              "openApiSpecsFilePath": "https://artifacts.moj.gov.ae/repository/webmethods/integrationserver/feature/pushArtifactstoNexus/adawqaf/swagger.yaml"
+            }
+          ],
+          "update": [],
+          "delete": []
+        }
+      },
+      "identity": {
+        "internet": {
+          "name": "InternetIdentityService",
+          "version": "1.0.0",
+          "imagePath": "docker-registry.moj.gov.ae/repository/moj-docker/identity/internet:v-20-ed1edd2e",
+          "action": "Start",
           "provenance": {
-            "sourceBranch": "refs/heads/main",
-            "sourceCommitId": "acf3bdf4ce6d83528ff2af9070a81173f6b83e26",
-            "buildNumber": "v-54-acf3bdf4",
-            "releaseNotes": "the Initial release"
+            "sourceBranch": "refs/heads/feature/publishMetadata",
+            "sourceCommitId": "ed1edd2ed65a00e9cdaaed55afd0ba0f2f418edf",
+            "buildNumber": "v-20-ed1edd2e",
+            "releaseNotes": "Initial release of the internet identity service."
+          }
+        },
+        "intranet": {
+          "name": "IntranetIdentityService",
+          "version": "1.0.0",
+          "imagePath": "docker-registry.moj.gov.ae/repository/moj-docker/identity/intranet:v-20-ed1edd2e",
+          "action": "Start",
+          "provenance": {
+            "sourceBranch": "refs/heads/feature/publishMetadata",
+            "sourceCommitId": "ed1edd2ed65a00e9cdaaed55afd0ba0f2f418edf",
+            "buildNumber": "v-20-ed1edd2e",
+            "releaseNotes": "Initial release of the intranet identity service."
           }
         }
-      ],
-      "delete": [
-        { "name": "MOJOrganizationManagement", "artifactType": "DynamicsSolution" },
-        { "name": "InboundIntegration", "artifactType": "DynamicsSolution" },
-        { "name": "ReportManagement", "artifactType": "DynamicsSolution" },
-        { "name": "Profile", "artifactType": "DynamicsSolution" },
-        { "name": "AssetManagement", "artifactType": "DynamicsSolution" },
-        { "name": "DebtManagement", "artifactType": "DynamicsSolution" },
-        { "name": "Session", "artifactType": "DynamicsSolution" },
-        { "name": "TE", "artifactType": "DynamicsSolution" },
-        { "name": "LegalOpinion", "artifactType": "DynamicsSolution" },
-        { "name": "LegalRequestEngine", "artifactType": "DynamicsSolution" },
-        { "name": "Decisions", "artifactType": "DynamicsSolution" },
-        { "name": "Judgment", "artifactType": "DynamicsSolution" },
-        { "name": "LegalFiles", "artifactType": "DynamicsSolution" }
-      ]
-    }
-  },
-  "integration": {
-    "packages": {
-      "add": [
-        {
-          "name": "ADAWQAF",
-          "version": "1.0.0",
-          "image": {
-            "name": "InternetIdentityService",
-            "version": "1.0.0",
-            "imagePath": "docker-registry.moj.gov.ae/repository/moj-docker/identity/internet:v-20-ed1edd2e",
-            "action": "Update",
-            "provenance": {
-              "sourceBranch": "refs/heads/feature/publishMetadata",
-              "sourceCommitId": "ed1edd2ed65a00e9cdaaed55afd0ba0f2f418edf",
-              "buildNumber": "v-20-ed1edd2e",
-              "releaseNotes": "Initial release of the internet identity service."
-            }
-          },
-          "configFilePath": null,
-          "direction": "Inbound",
-          "apiScope": "Internet",
-          "openApiSpecsFilePath": "https://artifacts.moj.gov.ae/repository/webmethods/integrationserver/feature/pushArtifactstoNexus/adawqaf/swagger.yaml"
-        }
-      ],
-      "update": [],
-      "delete": []
-    }
-  },
-  "identity": {
-    "internet": {
-      "name": "InternetIdentityService",
-      "version": "1.0.0",
-      "imagePath": "docker-registry.moj.gov.ae/repository/moj-docker/identity/internet:v-20-ed1edd2e",
-      "action": "Start",
-      "provenance": {
-        "sourceBranch": "refs/heads/feature/publishMetadata",
-        "sourceCommitId": "ed1edd2ed65a00e9cdaaed55afd0ba0f2f418edf",
-        "buildNumber": "v-20-ed1edd2e",
-        "releaseNotes": "Initial release of the internet identity service."
       }
-    },
-    "intranet": {
-      "name": "IntranetIdentityService",
-      "version": "1.0.0",
-      "imagePath": "docker-registry.moj.gov.ae/repository/moj-docker/identity/intranet:v-20-ed1edd2e",
-      "action": "Start",
-      "provenance": {
-        "sourceBranch": "refs/heads/feature/publishMetadata",
-        "sourceCommitId": "ed1edd2ed65a00e9cdaaed55afd0ba0f2f418edf",
-        "buildNumber": "v-20-ed1edd2e",
-        "releaseNotes": "Initial release of the intranet identity service."
-      }
-    }
-  }
-}'''
+    }'''
     writeFile file: 'deployment-manifest.json', text: manifestJson
     echo "Generated ${pwd()}/deployment-manifest.json"
   }
@@ -407,14 +387,13 @@ def call(Map cfg = [:]) {
         def projects = asList(sol.projects ?: sol.projets)
         projects.each { projAny ->
           def proj = asMap(projAny)
-          def projName = normalize(proj.get('name')) ?: '(unknown-project)'
+          def projName = normalize(proj.get('name'))
 
-          // If no apis/api node, skip this project entirely
           def apisNode = proj.apis ?: proj.api
           if (apisNode == null) return
 
           def apiList = asList(apisNode)
-          if (!apiList) return // nothing to do for this project
+          if (!apiList) return
 
           apiList.each { apiAny ->
             def api = asMap(apiAny)
@@ -446,8 +425,8 @@ def call(Map cfg = [:]) {
 
     // If nothing collected, just exit the stage silently
     if (apis.isEmpty()) {
-      echo "No Apis to deploy" 
-    return
+      echo 'No Apis to deploy'
+      return
     }
 
     apis.each { api ->
@@ -501,7 +480,7 @@ def call(Map cfg = [:]) {
         def cfgPath  = normalize(raw?.configFilePath)
 
         pkgs << [
-          name          : name ?: '(unknown)',
+          name          : name,
           version       : version,
           imageName     : imgName,
           imagePath     : imgPath,
@@ -530,11 +509,11 @@ def call(Map cfg = [:]) {
       def (repo, tag) = parseRepoTag(pkg.imagePath, pkg.imageVersion)
 
       lines << '# ==================================================================='
-      lines << "# ${pkg.bucket?.toUpperCase() ?: 'BUCKET'} :: ${pkg.name}${pkg.version ? " v${pkg.version}" : ''}"
-      lines << "# imageName: ${pkg.imageName ?: '(none)'}"
-      lines << "# imagePath: ${pkg.imagePath ?: '(none)'}"
-      lines << "# action   : ${pkg.action ?: '(none)'}"
-      lines << "# config   : ${pkg.configFilePath ?: '(none)'}"
+      lines << "# ${pkg.bucket?.toUpperCase()} :: ${pkg.name}${pkg.version ? " v${pkg.version}" : ''}"
+      lines << "# imageName: ${pkg.imageName}"
+      lines << "# imagePath: ${pkg.imagePath}"
+      lines << "# action   : ${pkg.action}"
+      lines << "# config   : ${pkg.configFilePath}"
       lines << '# ==================================================================='
 
       if (isRealVal(pkg.configFilePath)) {
@@ -582,7 +561,7 @@ def call(Map cfg = [:]) {
       def name     = normalize(o.name) ?: "(unknown-${n.key})"
       def version  = normalize(o.version)
       def image    = normalize(o.imagePath)
-      def action   = normalize(o.action)   // Start/Install/Update/Upgrade/Restart/Stop
+      def action   = normalize(o.action)
       def rel      = mkRelease(name, n.key, 'identity')
       def (repo, tag) = parseRepoTag(image, null)
 
