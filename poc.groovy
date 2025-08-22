@@ -255,13 +255,35 @@ def call(Map cfg = [:]) {
     return v
   }
 
+  // Coerce an element that might be Map, Map.Entry, or something else
+  def asMap = { obj ->
+    if (obj instanceof Map.Entry) return (obj.value instanceof Map) ? obj.value : [:]
+    return (obj instanceof Map) ? obj : [:]
+  }
+
+  // List coercion that handles:
+  // - null -> []
+  // - List -> unchanged
+  // - Map with add/update arrays -> concatenated
+  // - Map (single project map) -> [that map]
   def asList = { obj ->
     if (obj == null)         return []
     if (obj instanceof List) return obj
     if (obj instanceof Map) {
       def acc = []
-      ['add', 'update'].each { k -> if (obj[k] instanceof List) acc.addAll(obj[k]) }
-      return acc
+      if (obj.add instanceof List || obj.update instanceof List) {
+        if (obj.add    instanceof List) acc.addAll(obj.add)
+        if (obj.update instanceof List) acc.addAll(obj.update)
+        return acc
+      }
+      // treat as a single project map
+      return [obj]
+    }
+    // Map.Entry -> treat value
+    if (obj instanceof Map.Entry) {
+      def v = obj.value
+      if (v instanceof List) return v
+      if (v instanceof Map)  return [v]
     }
     return []
   }
@@ -278,7 +300,8 @@ def call(Map cfg = [:]) {
 
   def buildCommandsForSolutions = { List sols, String bucketLabel ->
     def cmds = []
-    (sols ?: []).each { Map sol ->
+    (sols ?: []).each { solAny ->
+      def sol = asMap(solAny)
       def solName = firstNonNull(sol, ['name', 'solution']) ?: '(unknown)'
       echo "Processing ${bucketLabel} solution: ${solName}"
 
@@ -296,20 +319,23 @@ def call(Map cfg = [:]) {
         echo "WARN: solution '${solName}' missing 'managedSolutionFilePath' -> skipping solution import"
       }
 
-      // Projects block: may be {add/update/delete} or a flat list
+      // Projects: may be {add/update/delete}, a flat list, or a single map
       def projects = asList(sol.projects ?: sol.projets)
       if (!projects) {
         echo "INFO: solution '${solName}' has no projects to import"
       }
 
-      projects.each { Map proj ->
+      projects.each { projAny ->
+        def proj = asMap(projAny)
+
         def flopPath  = firstNonNull(proj, ['flopFilePath', 'flop'])
         def entityMap = firstNonNull(proj, ['entityDataMapFilePath', 'entityDataMap'])
         def locResMap = firstNonNull(proj, ['localizedResourceDataMapFilePath', 'localizedResourceDataMap'])
         def dataFile  = firstNonNull(proj, ['dataFilePath', 'dataFile'])
 
         if (!flopPath) {
-          echo "WARN: project '${(proj.name ?: '?')}' missing 'flopFilePath' -> skipping"
+          def pname = normalize(proj.name) ?: '?'
+          echo "WARN: project '${pname}' missing 'flopFilePath' -> skipping"
           return
         }
 
@@ -346,7 +372,6 @@ def call(Map cfg = [:]) {
     // commands.each { c -> sh "set -e; echo Executing: ${c} ; ${c}" }
   }
 }
-
 
 
   stage('Extract Client Extension command from manifest') {
